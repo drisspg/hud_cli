@@ -120,7 +120,7 @@ class HudClient:
                     raise HudAuthError(_auth_error_message(response.status_code, url))
                 if response.status_code == 429:
                     raise HudError(
-                        f"HUD rate-limited this request for {url}. Try a smaller query, wait a bit, or use the planned proxy path for rate-limited access."
+                        f"HUD rate-limited this request for {url}. Run `hud doctor` to inspect auth, then set HUD_INTERNAL_BOT_TOKEN or GITHUB_TOKEN if you have access."
                     )
                 response.raise_for_status()
                 return response.json()

@@ -367,8 +367,17 @@ def search_failures(
     console.print(data)
 
 
+@app.command("doctor")
+def doctor() -> None:
+    render_auth_doctor()
+
+
 @auth_app.command("doctor")
 def auth_doctor() -> None:
+    render_auth_doctor()
+
+
+def render_auth_doctor() -> None:
     config = load_config()
     status = gcx_status(config)
     table = Table(title="HUD auth")

@@ -16,8 +16,9 @@ def test_help() -> None:
     assert "PyTorch HUD" in result.output
 
 
-def test_auth_doctor() -> None:
-    result = runner.invoke(app, ["auth", "doctor"])
+@pytest.mark.parametrize("args", [["doctor"], ["auth", "doctor"]])
+def test_auth_doctor(args) -> None:
+    result = runner.invoke(app, args)
 
     assert result.exit_code == 0
     assert "HUD auth" in result.output

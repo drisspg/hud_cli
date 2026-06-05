@@ -392,7 +392,11 @@ def auth_setup() -> None:
     )
     table.add_row(
         "Grafana/gcx",
-        "If you have serviceaccounts:read access, create a read-only token at https://pytorchci.grafana.net/org/serviceaccounts/cfn5z4cfsydc0b and export it as GRAFANA_TOKEN. If Grafana says serviceaccounts:read is missing, ask a PyTorch Grafana org admin/CI infra owner to issue a Viewer/read-only token or grant service-account creator access.",
+        "gcx login for pytorchci requires a token: `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token $GRAFANA_TOKEN`. If https://pytorchci.grafana.net/org/serviceaccounts/cfn5z4cfsydc0b says serviceaccounts:read is missing, ask a PyTorch Grafana org admin/CI infra owner to issue a Viewer/read-only token or grant service-account creator access.",
+    )
+    table.add_row(
+        "ClickHouse MCP",
+        "Requires raw CLICKHOUSE_HOST, CLICKHOUSE_PORT, CLICKHOUSE_USER, and CLICKHOUSE_PASSWORD credentials. Its README does not document a self-serve acquisition flow.",
     )
     console.print(table)
 

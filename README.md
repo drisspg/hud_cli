@@ -47,6 +47,12 @@ gcx_path = "/path/to/gcx"
 
 `GRAFANA_TOKEN` should be a read-only token. Grafana/gcx is often the best broad data path across ClickHouse, Prometheus, and CI dashboards when a HUD API token is unavailable. `hud` only reports whether tokens are set and never prints their values.
 
+Print the setup instructions:
+
+```bash
+hud auth setup
+```
+
 Check the active auth path:
 
 ```bash

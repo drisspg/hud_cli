@@ -27,6 +27,15 @@ def test_auth_doctor(args) -> None:
     assert "gcx" in result.output
 
 
+def test_auth_setup() -> None:
+    result = runner.invoke(app, ["auth", "setup"])
+
+    assert result.exit_code == 0
+    assert "gh auth login" in result.output
+    assert "HUD_API_TOKEN" in result.output
+    assert "pytorchci.grafana.net" in result.output
+
+
 def test_gcx_doctor_json_reports_missing() -> None:
     result = runner.invoke(
         app,

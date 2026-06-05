@@ -377,6 +377,26 @@ def auth_doctor() -> None:
     render_auth_doctor()
 
 
+@auth_app.command("setup")
+def auth_setup() -> None:
+    table = Table(title="Authentication setup")
+    table.add_column("Access")
+    table.add_column("How to get it")
+    table.add_row(
+        "GitHub",
+        "Run `gh auth login --hostname github.com --git-protocol ssh --web`. hud will auto-use `gh auth token` for GitHub source access.",
+    )
+    table.add_row(
+        "HUD API",
+        "Ask a PyTorch HUD/test-infra owner for HUD_API_TOKEN. This is the internal bot token used as the `x-hud-internal-bot` header; it is not created by GitHub auth.",
+    )
+    table.add_row(
+        "Grafana/gcx",
+        "Create a read-only service-account token at https://pytorchci.grafana.net/org/serviceaccounts/cfn5z4cfsydc0b and export it as GRAFANA_TOKEN.",
+    )
+    console.print(table)
+
+
 def render_auth_doctor() -> None:
     config = load_config()
     status = gcx_status(config)

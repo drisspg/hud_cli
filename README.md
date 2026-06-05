@@ -45,7 +45,7 @@ github_token = "..."
 gcx_path = "/path/to/gcx"
 ```
 
-`GRAFANA_TOKEN` should be a read-only token. Grafana/gcx is often the best broad data path across ClickHouse, Prometheus, and CI dashboards when a HUD API token is unavailable. `hud` only reports whether tokens are set and never prints their values.
+`GRAFANA_TOKEN` should be a read-only token. Grafana/gcx is often the best broad data path across ClickHouse, Prometheus, and CI dashboards when a HUD API token is unavailable. If Grafana reports missing `serviceaccounts:read`, ask a PyTorch Grafana org admin/CI infra owner to issue a Viewer/read-only token or grant service-account creator access. `hud` only reports whether tokens are set and never prints their values.
 
 Print the setup instructions:
 

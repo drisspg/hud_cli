@@ -392,7 +392,7 @@ def auth_setup() -> None:
     )
     table.add_row(
         "Grafana/gcx",
-        "Create a read-only service-account token at https://pytorchci.grafana.net/org/serviceaccounts/cfn5z4cfsydc0b and export it as GRAFANA_TOKEN.",
+        "If you have serviceaccounts:read access, create a read-only token at https://pytorchci.grafana.net/org/serviceaccounts/cfn5z4cfsydc0b and export it as GRAFANA_TOKEN. If Grafana says serviceaccounts:read is missing, ask a PyTorch Grafana org admin/CI infra owner to issue a Viewer/read-only token or grant service-account creator access.",
     )
     console.print(table)
 

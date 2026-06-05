@@ -27,7 +27,7 @@ Optional environment variables:
 
 ```bash
 export HUD_BASE_URL=https://hud.pytorch.org/api
-export HUD_INTERNAL_BOT_TOKEN=...
+export HUD_API_TOKEN=...
 export GITHUB_TOKEN=...
 export GRAFANA_TOKEN=...
 export HUD_GCX_PATH=/path/to/gcx
@@ -38,7 +38,7 @@ Optional config file at `~/.config/pytorch-hud/config.toml`:
 ```toml
 [hud]
 base_url = "https://hud.pytorch.org/api"
-internal_bot_token = "..."
+api_token = "..."
 github_token = "..."
 gcx_path = "/path/to/gcx"
 ```

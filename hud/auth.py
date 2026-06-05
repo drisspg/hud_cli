@@ -27,7 +27,9 @@ def load_config(config_path: Path = CONFIG_PATH) -> HudConfig:
         base_url=os.environ.get("HUD_BASE_URL")
         or file_values.get("base_url")
         or DEFAULT_BASE_URL,
-        internal_bot_token=os.environ.get("HUD_INTERNAL_BOT_TOKEN")
+        internal_bot_token=os.environ.get("HUD_API_TOKEN")
+        or os.environ.get("HUD_INTERNAL_BOT_TOKEN")
+        or file_values.get("api_token")
         or file_values.get("internal_bot_token"),
         github_token=os.environ.get("GITHUB_TOKEN") or file_values.get("github_token"),
         gcx_path=os.environ.get("HUD_GCX_PATH") or file_values.get("gcx_path"),

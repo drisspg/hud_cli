@@ -120,7 +120,7 @@ class HudClient:
                     raise HudAuthError(_auth_error_message(response.status_code, url))
                 if response.status_code == 429:
                     raise HudError(
-                        f"HUD rate-limited this request for {url}. Run `hud doctor` to inspect auth, then set HUD_INTERNAL_BOT_TOKEN or GITHUB_TOKEN if you have access."
+                        f"HUD rate-limited this request for {url}. Run `hud doctor` to inspect auth, then set HUD_API_TOKEN if you have access."
                     )
                 response.raise_for_status()
                 return response.json()
@@ -147,5 +147,5 @@ class HudClient:
 def _auth_error_message(status_code: int, url: str) -> str:
     return (
         f"HUD request got HTTP {status_code} for {url}. Try again on the corporate VPN, "
-        "set HUD_INTERNAL_BOT_TOKEN if you have one, or use the planned SSO proxy once deployed."
+        "set HUD_API_TOKEN if you have one, or use the planned SSO proxy once deployed."
     )

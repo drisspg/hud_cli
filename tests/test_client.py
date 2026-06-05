@@ -1,6 +1,6 @@
 import pytest
 
-from hud.auth import HudConfig
+from hud.auth import HudConfig, load_config
 from hud.client import HudClient, HudError, RetryPolicy
 
 
@@ -24,6 +24,12 @@ def test_headers_include_optional_tokens() -> None:
 
     assert client._headers()["x-hud-internal-bot"] == "hud-token"
     assert client._headers()["authorization"] == "Bearer github-token"
+
+
+def test_load_config_accepts_hud_api_token(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HUD_API_TOKEN", "hud-api-token")
+
+    assert load_config(tmp_path / "missing.toml").internal_bot_token == "hud-api-token"
 
 
 def test_s3_log_url_uses_direct_s3() -> None:

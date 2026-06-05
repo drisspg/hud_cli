@@ -5,6 +5,6 @@
 - Keep commands usable through global installation with `uv tool install`.
 - Prefer Typer for CLI commands and Rich for human output.
 - Every data command should support a concise `--json` mode for agents.
-- Keep authentication seamless: tokenless HUD access first, optional `HUD_INTERNAL_BOT_TOKEN`, optional `GITHUB_TOKEN`, and clear errors when access is blocked.
+- Keep authentication seamless: tokenless HUD access first, optional `HUD_API_TOKEN`, optional `GITHUB_TOKEN`, and clear errors when access is blocked.
 - Do not print credential values.
 - Cap default result sizes and require explicit windows for expensive ClickHouse recipes.

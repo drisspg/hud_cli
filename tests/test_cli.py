@@ -22,6 +22,7 @@ def test_auth_doctor(args) -> None:
 
     assert result.exit_code == 0
     assert "HUD auth" in result.output
+    assert "HUD_API_TOKEN" in result.output
     assert "GRAFANA_TOKEN" in result.output
     assert "gcx" in result.output
 

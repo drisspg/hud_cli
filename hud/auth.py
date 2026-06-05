@@ -13,7 +13,7 @@ DEFAULT_BASE_URL = "https://hud.pytorch.org/api"
 @dataclass(frozen=True)
 class HudConfig:
     base_url: str = DEFAULT_BASE_URL
-    internal_bot_token: str | None = None
+    api_token: str | None = None
     github_token: str | None = None
     gcx_path: str | None = None
 
@@ -27,10 +27,7 @@ def load_config(config_path: Path = CONFIG_PATH) -> HudConfig:
         base_url=os.environ.get("HUD_BASE_URL")
         or file_values.get("base_url")
         or DEFAULT_BASE_URL,
-        internal_bot_token=os.environ.get("HUD_API_TOKEN")
-        or os.environ.get("HUD_INTERNAL_BOT_TOKEN")
-        or file_values.get("api_token")
-        or file_values.get("internal_bot_token"),
+        api_token=os.environ.get("HUD_API_TOKEN") or file_values.get("api_token"),
         github_token=os.environ.get("GITHUB_TOKEN") or file_values.get("github_token"),
         gcx_path=os.environ.get("HUD_GCX_PATH") or file_values.get("gcx_path"),
     )

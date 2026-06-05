@@ -137,8 +137,8 @@ class HudClient:
 
     def _headers(self) -> dict[str, str]:
         headers = {"accept": "application/json", "user-agent": "pytorch-hud-cli"}
-        if self.config.internal_bot_token:
-            headers["x-hud-internal-bot"] = self.config.internal_bot_token
+        if self.config.api_token:
+            headers["x-hud-internal-bot"] = self.config.api_token
         if self.config.github_token:
             headers["authorization"] = f"Bearer {self.config.github_token}"
         return headers

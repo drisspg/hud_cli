@@ -6,5 +6,6 @@
 - Prefer Typer for CLI commands and Rich for human output.
 - Every data command should support a concise `--json` mode for agents.
 - Keep authentication seamless: tokenless HUD access first, optional `HUD_API_TOKEN`, optional `GITHUB_TOKEN`, and clear errors when access is blocked.
+- Prefer one blessed path over backward-compatible fallbacks; this project is early and can make breaking changes freely while iterating.
 - Do not print credential values.
 - Cap default result sizes and require explicit windows for expensive ClickHouse recipes.

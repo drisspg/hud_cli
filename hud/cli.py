@@ -385,7 +385,7 @@ def render_auth_doctor() -> None:
     table.add_column("Value")
     table.add_row("base_url", config.base_url)
     table.add_row("config", str(CONFIG_PATH))
-    table.add_row("HUD_API_TOKEN/HUD_INTERNAL_BOT_TOKEN", "set" if config.internal_bot_token else "not set")
+    table.add_row("HUD_API_TOKEN", "set" if config.api_token else "not set")
     table.add_row("GITHUB_TOKEN", "set" if config.github_token else "not set")
     table.add_row("GRAFANA_TOKEN", "set" if status.grafana_token_set else "not set")
     table.add_row("gcx", status.label)

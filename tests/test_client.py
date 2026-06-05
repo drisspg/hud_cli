@@ -19,17 +19,24 @@ class FakeResponse:
 
 def test_headers_include_optional_tokens() -> None:
     client = HudClient(
-        HudConfig(internal_bot_token="hud-token", github_token="github-token")
+        HudConfig(api_token="hud-token", github_token="github-token")
     )
 
     assert client._headers()["x-hud-internal-bot"] == "hud-token"
     assert client._headers()["authorization"] == "Bearer github-token"
 
 
-def test_load_config_accepts_hud_api_token(monkeypatch, tmp_path) -> None:
+def test_load_config_accepts_only_hud_api_token(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("HUD_API_TOKEN", "hud-api-token")
+    monkeypatch.setenv("HUD_INTERNAL_BOT_TOKEN", "legacy-token")
 
-    assert load_config(tmp_path / "missing.toml").internal_bot_token == "hud-api-token"
+    assert load_config(tmp_path / "missing.toml").api_token == "hud-api-token"
+
+
+def test_load_config_ignores_legacy_hud_internal_bot_token(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HUD_INTERNAL_BOT_TOKEN", "legacy-token")
+
+    assert load_config(tmp_path / "missing.toml").api_token is None
 
 
 def test_s3_log_url_uses_direct_s3() -> None:

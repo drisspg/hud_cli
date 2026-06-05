@@ -33,6 +33,8 @@ export GRAFANA_TOKEN=...
 export HUD_GCX_PATH=/path/to/gcx
 ```
 
+`HUD_API_TOKEN` is the only token used for authenticated HUD API requests. `GITHUB_TOKEN` is used for GitHub-backed source lookups; if it is not set, `hud` automatically tries `gh auth token`.
+
 Optional config file at `~/.config/pytorch-hud/config.toml`:
 
 ```toml
@@ -43,7 +45,7 @@ github_token = "..."
 gcx_path = "/path/to/gcx"
 ```
 
-`GRAFANA_TOKEN` should be a read-only token. `hud` only reports whether it is set and never prints the value.
+`GRAFANA_TOKEN` should be a read-only token. Grafana/gcx is often the best broad data path across ClickHouse, Prometheus, and CI dashboards when a HUD API token is unavailable. `hud` only reports whether tokens are set and never prints their values.
 
 Check the active auth path:
 

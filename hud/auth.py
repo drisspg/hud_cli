@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,9 +30,26 @@ def load_config(config_path: Path = CONFIG_PATH) -> HudConfig:
         or file_values.get("base_url")
         or DEFAULT_BASE_URL,
         api_token=os.environ.get("HUD_API_TOKEN") or file_values.get("api_token"),
-        github_token=os.environ.get("GITHUB_TOKEN") or file_values.get("github_token"),
+        github_token=_load_github_token(file_values),
         gcx_path=os.environ.get("HUD_GCX_PATH") or file_values.get("gcx_path"),
     )
+
+
+def _load_github_token(file_values: dict[str, str]) -> str | None:
+    if token := os.environ.get("GITHUB_TOKEN") or file_values.get("github_token"):
+        return token
+    if shutil.which("gh") is None:
+        return None
+    result = subprocess.run(
+        ["gh", "auth", "token"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def _load_config_file(config_path: Path) -> dict[str, str]:

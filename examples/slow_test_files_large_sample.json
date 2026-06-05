@@ -1,0 +1,1100 @@
+[
+  {
+    "file": "test/distributed/test_c10d_nccl",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 999.84
+  },
+  {
+    "file": "test/distributed/test_c10d_nccl",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 549.38
+  },
+  {
+    "file": "test/distributed/test_c10d_nccl",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 677.58
+  },
+  {
+    "file": "test/inductor/test_torchinductor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 657.78
+  },
+  {
+    "file": "test/inductor/test_torchinductor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 893.06
+  },
+  {
+    "file": "test/inductor/test_torchinductor",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 500.36
+  },
+  {
+    "file": "test/inductor/test_torchinductor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 570.89
+  },
+  {
+    "file": "test/inductor/test_triton_heuristics",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 627.47
+  },
+  {
+    "file": "test/inductor/test_triton_heuristics",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 803.19
+  },
+  {
+    "file": "test/inductor/test_triton_heuristics",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 440.3
+  },
+  {
+    "file": "test/dynamo/test_repros",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 575.49
+  },
+  {
+    "file": "test/dynamo/test_repros",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 785.11
+  },
+  {
+    "file": "test/dynamo/test_repros",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 540.39
+  },
+  {
+    "file": "test/export/test_export",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 578.75
+  },
+  {
+    "file": "test/export/test_export",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 402.7
+  },
+  {
+    "file": "test/export/test_export",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 502.3
+  },
+  {
+    "file": "test/functorch/test_aotdispatch",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 749.53
+  },
+  {
+    "file": "test/functorch/test_aotdispatch",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 415.41
+  },
+  {
+    "file": "test/functorch/test_aotdispatch",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 514.06
+  },
+  {
+    "file": "test/test_nn",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 563.19
+  },
+  {
+    "file": "test/test_nn",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 765.71
+  },
+  {
+    "file": "test/test_nn",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 431.98
+  },
+  {
+    "file": "test/test_nn",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 487.53
+  },
+  {
+    "file": "test/test_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 422.44
+  },
+  {
+    "file": "test/test_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 526.75
+  },
+  {
+    "file": "test/test_ops",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 292.4
+  },
+  {
+    "file": "test/test_cuda",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 402.59
+  },
+  {
+    "file": "test/test_cuda",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 552.04
+  },
+  {
+    "file": "test/test_cuda",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 388.12
+  },
+  {
+    "file": "test/test_autograd",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 427.97
+  },
+  {
+    "file": "test/test_autograd",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 293.86
+  },
+  {
+    "file": "test/test_autograd",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 369.49
+  },
+  {
+    "file": "test/test_jit",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 568.06
+  },
+  {
+    "file": "test/test_jit",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 318.17
+  },
+  {
+    "file": "test/test_jit",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 395.43
+  },
+  {
+    "file": "test/test_fx",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 440.71
+  },
+  {
+    "file": "test/test_fx",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 600.71
+  },
+  {
+    "file": "test/test_fx",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 343.51
+  },
+  {
+    "file": "test/test_fx",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 379.63
+  },
+  {
+    "file": "test/test_mps",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 470.48
+  },
+  {
+    "file": "test/test_mps",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 591.95
+  },
+  {
+    "file": "test/test_mps",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 326.71
+  },
+  {
+    "file": "test/test_quantization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 458.24
+  },
+  {
+    "file": "test/test_quantization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 627.53
+  },
+  {
+    "file": "test/test_quantization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 436.98
+  },
+  {
+    "file": "test/test_sparse",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 328.84
+  },
+  {
+    "file": "test/test_sparse",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 222.21
+  },
+  {
+    "file": "test/test_sparse",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 282.14
+  },
+  {
+    "file": "test/test_linalg",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 441.56
+  },
+  {
+    "file": "test/test_linalg",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 250.23
+  },
+  {
+    "file": "test/test_linalg",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 312.61
+  },
+  {
+    "file": "test/test_optim",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 351.08
+  },
+  {
+    "file": "test/test_optim",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 480.06
+  },
+  {
+    "file": "test/test_optim",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 278.7
+  },
+  {
+    "file": "test/test_optim",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 300.63
+  },
+  {
+    "file": "test/test_module",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 384.54
+  },
+  {
+    "file": "test/test_module",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 519.28
+  },
+  {
+    "file": "test/test_module",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 264.55
+  },
+  {
+    "file": "test/test_serialization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 375.48
+  },
+  {
+    "file": "test/test_serialization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 516.15
+  },
+  {
+    "file": "test/test_serialization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 364.02
+  },
+  {
+    "file": "test/test_multiprocessing",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 409.83
+  },
+  {
+    "file": "test/test_multiprocessing",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 280.24
+  },
+  {
+    "file": "test/test_multiprocessing",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 353.29
+  },
+  {
+    "file": "test/test_nestedtensor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 554.5
+  },
+  {
+    "file": "test/test_nestedtensor",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 310.0
+  },
+  {
+    "file": "test/test_nestedtensor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 385.89
+  },
+  {
+    "file": "test/test_foreach",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 275.6
+  },
+  {
+    "file": "test/test_foreach",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 378.51
+  },
+  {
+    "file": "test/test_foreach",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 224.07
+  },
+  {
+    "file": "test/test_foreach",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 234.09
+  },
+  {
+    "file": "test/test_transformers",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 310.95
+  },
+  {
+    "file": "test/test_transformers",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 420.28
+  },
+  {
+    "file": "test/test_transformers",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 211.28
+  },
+  {
+    "file": "test/test_masked",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 303.57
+  },
+  {
+    "file": "test/test_masked",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 419.41
+  },
+  {
+    "file": "test/test_masked",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 300.62
+  },
+  {
+    "file": "test/test_prims",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 339.42
+  },
+  {
+    "file": "test/test_prims",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 229.26
+  },
+  {
+    "file": "test/test_prims",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 291.21
+  },
+  {
+    "file": "test/test_decomp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 461.63
+  },
+  {
+    "file": "test/test_decomp",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 260.0
+  },
+  {
+    "file": "test/test_decomp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 325.0
+  },
+  {
+    "file": "test/test_proxy_tensor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 368.78
+  },
+  {
+    "file": "test/test_proxy_tensor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 504.65
+  },
+  {
+    "file": "test/test_proxy_tensor",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 290.88
+  },
+  {
+    "file": "test/test_proxy_tensor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 315.97
+  },
+  {
+    "file": "test/test_meta",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 405.24
+  },
+  {
+    "file": "test/test_meta",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 547.93
+  },
+  {
+    "file": "test/test_meta",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 278.89
+  },
+  {
+    "file": "test/test_cpp_extensions",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 237.87
+  },
+  {
+    "file": "test/test_cpp_extensions",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 331.08
+  },
+  {
+    "file": "test/test_cpp_extensions",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 242.69
+  },
+  {
+    "file": "test/test_package",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 274.66
+  },
+  {
+    "file": "test/test_package",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 225.36
+  },
+  {
+    "file": "test/test_package",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 234.1
+  },
+  {
+    "file": "test/test_mobile_optimizer",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 375.7
+  },
+  {
+    "file": "test/test_mobile_optimizer",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 213.71
+  },
+  {
+    "file": "test/test_mobile_optimizer",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 268.64
+  },
+  {
+    "file": "test/test_datapipe",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 305.66
+  },
+  {
+    "file": "test/test_datapipe",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 419.79
+  },
+  {
+    "file": "test/test_datapipe",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 245.15
+  },
+  {
+    "file": "test/test_datapipe",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 260.3
+  },
+  {
+    "file": "test/test_dataloader",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 342.85
+  },
+  {
+    "file": "test/test_dataloader",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 464.04
+  },
+  {
+    "file": "test/test_dataloader",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 233.69
+  },
+  {
+    "file": "test/test_type_hints",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 337.15
+  },
+  {
+    "file": "test/test_type_hints",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 465.45
+  },
+  {
+    "file": "test/test_type_hints",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 329.93
+  },
+  {
+    "file": "test/test_python_dispatch",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 374.56
+  },
+  {
+    "file": "test/test_python_dispatch",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 297.0
+  },
+  {
+    "file": "test/test_python_dispatch",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 321.89
+  },
+  {
+    "file": "test/test_vmap",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 294.35
+  },
+  {
+    "file": "test/test_vmap",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 169.85
+  },
+  {
+    "file": "test/test_vmap",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 215.26
+  },
+  {
+    "file": "test/test_functionalization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 245.68
+  },
+  {
+    "file": "test/test_functionalization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 339.16
+  },
+  {
+    "file": "test/test_functionalization",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 201.69
+  },
+  {
+    "file": "test/test_functionalization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 207.39
+  },
+  {
+    "file": "test/test_view_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 283.37
+  },
+  {
+    "file": "test/test_view_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 384.1
+  },
+  {
+    "file": "test/test_view_ops",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 190.58
+  },
+  {
+    "file": "test/test_binary_ufuncs",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 278.14
+  },
+  {
+    "file": "test/test_binary_ufuncs",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 386.14
+  },
+  {
+    "file": "test/test_binary_ufuncs",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 277.89
+  },
+  {
+    "file": "test/test_unary_ufuncs",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 316.0
+  },
+  {
+    "file": "test/test_unary_ufuncs",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 254.56
+  },
+  {
+    "file": "test/test_unary_ufuncs",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 270.24
+  },
+  {
+    "file": "test/test_reductions",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 433.54
+  },
+  {
+    "file": "test/test_reductions",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 243.62
+  },
+  {
+    "file": "test/test_reductions",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 305.65
+  },
+  {
+    "file": "test/test_spectral_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 348.92
+  },
+  {
+    "file": "test/test_spectral_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 478.89
+  },
+  {
+    "file": "test/test_spectral_ops",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 275.74
+  },
+  {
+    "file": "test/test_spectral_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 341.13
+  },
+  {
+    "file": "test/test_testing",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 225.98
+  },
+  {
+    "file": "test/test_testing",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 306.97
+  },
+  {
+    "file": "test/test_testing",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 148.98
+  },
+  {
+    "file": "test/test_custom_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 221.1
+  },
+  {
+    "file": "test/test_custom_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 309.48
+  },
+  {
+    "file": "test/test_custom_ops",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 227.56
+  },
+  {
+    "file": "test/test_ops_gradients",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 259.28
+  },
+  {
+    "file": "test/test_ops_gradients",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 213.44
+  },
+  {
+    "file": "test/test_ops_gradients",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 220.2
+  },
+  {
+    "file": "test/test_fake_tensor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 357.74
+  },
+  {
+    "file": "test/test_fake_tensor",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 202.73
+  },
+  {
+    "file": "test/test_fake_tensor",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 255.89
+  },
+  {
+    "file": "test/test_subclasses",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 292.8
+  },
+  {
+    "file": "test/test_subclasses",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 403.48
+  },
+  {
+    "file": "test/test_subclasses",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 235.06
+  },
+  {
+    "file": "test/test_subclasses",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 291.62
+  },
+  {
+    "file": "test/test_cuda_memory",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 331.14
+  },
+  {
+    "file": "test/test_cuda_memory",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 449.28
+  },
+  {
+    "file": "test/test_cuda_memory",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 224.42
+  },
+  {
+    "file": "test/test_profiler",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 369.52
+  },
+  {
+    "file": "test/test_profiler",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 452.15
+  },
+  {
+    "file": "test/test_profiler",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 320.22
+  },
+  {
+    "file": "test/test_checkpoint",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 203.95
+  },
+  {
+    "file": "test/test_checkpoint",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 173.33
+  },
+  {
+    "file": "test/test_checkpoint",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 171.4
+  },
+  {
+    "file": "test/test_fsdp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 283.72
+  },
+  {
+    "file": "test/test_fsdp",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 162.79
+  },
+  {
+    "file": "test/test_fsdp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 207.29
+  },
+  {
+    "file": "test/distributed/test_ddp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 237.94
+  },
+  {
+    "file": "test/distributed/test_ddp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 329.77
+  },
+  {
+    "file": "test/distributed/test_ddp",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 195.28
+  },
+  {
+    "file": "test/distributed/test_ddp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 243.23
+  },
+  {
+    "file": "test/distributed/test_fsdp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 276.49
+  },
+  {
+    "file": "test/distributed/test_fsdp",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 375.87
+  },
+  {
+    "file": "test/distributed/test_fsdp",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 184.8
+  },
+  {
+    "file": "test/distributed/test_distributed_spawn",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 315.08
+  },
+  {
+    "file": "test/distributed/test_distributed_spawn",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 379.01
+  },
+  {
+    "file": "test/distributed/test_distributed_spawn",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 272.19
+  },
+  {
+    "file": "test/onnx/test_export",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 310.71
+  },
+  {
+    "file": "test/onnx/test_export",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 249.91
+  },
+  {
+    "file": "test/onnx/test_export",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 265.23
+  },
+  {
+    "file": "test/ao/test_quantization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 428.45
+  },
+  {
+    "file": "test/ao/test_quantization",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 239.51
+  },
+  {
+    "file": "test/ao/test_quantization",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 301.29
+  },
+  {
+    "file": "test/package/test_package_bc",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "default",
+    "time": 184.07
+  },
+  {
+    "file": "test/package/test_package_bc",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "multigpu",
+    "time": 257.39
+  },
+  {
+    "file": "test/package/test_package_bc",
+    "base_name": "linux-jammy-py3.10-gcc11",
+    "test_config": "default",
+    "time": 156.21
+  },
+  {
+    "file": "test/package/test_package_bc",
+    "base_name": "linux-jammy-cuda12.8-py3.10-gcc11",
+    "test_config": "dynamic",
+    "time": 195.7
+  }
+]

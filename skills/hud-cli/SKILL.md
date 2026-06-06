@@ -11,6 +11,7 @@ Use this skill when answering PyTorch CI/CD questions with the local `hud` CLI. 
 - Do not print token values.
 - Keep SQL windows and limits explicit for expensive queries.
 - Start with schema discovery (`SHOW TABLES`, `DESCRIBE table`) when unsure.
+- For multi-line SQL, write a `.sql` file and run `hud gcx chq --file query.sql --json`, or pipe with `hud gcx chq - --json`.
 
 ## Quick health checks
 
@@ -49,6 +50,21 @@ hud gcx chq "SELECT id, workflow_name, name, tupleElement(torchci_classification
 
 # Recent jobs for a workflow/name pattern
 hud gcx chq "SELECT id, completed_at, conclusion, name FROM default.workflow_job WHERE completed_at > now() - INTERVAL 12 HOUR AND workflow_name = 'pull' AND name ILIKE '%linux%' ORDER BY completed_at DESC LIMIT 50" --json
+```
+
+For larger queries:
+
+```bash
+cat > /tmp/jobs.sql <<'SQL'
+SELECT workflow_name, count() AS jobs
+FROM default.workflow_job
+WHERE completed_at > now() - INTERVAL 6 HOUR
+GROUP BY workflow_name
+ORDER BY jobs DESC
+LIMIT 15
+SQL
+hud gcx chq --file /tmp/jobs.sql --json
+cat /tmp/jobs.sql | hud gcx chq - --json
 ```
 
 ## Grafana/gcx passthrough

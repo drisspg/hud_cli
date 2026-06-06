@@ -90,6 +90,21 @@ Use JSON for agents:
 hud gcx chq "SHOW TABLES FROM default" --json
 ```
 
+Keep larger queries in files or pipe them through stdin:
+
+```bash
+cat > /tmp/jobs.sql <<'SQL'
+SELECT workflow_name, count() AS jobs
+FROM default.workflow_job
+WHERE completed_at > now() - INTERVAL 6 HOUR
+GROUP BY workflow_name
+ORDER BY jobs DESC
+LIMIT 15
+SQL
+hud gcx chq --file /tmp/jobs.sql --json
+cat /tmp/jobs.sql | hud gcx chq - --json
+```
+
 Common starting points:
 
 ```bash

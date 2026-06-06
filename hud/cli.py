@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -246,12 +247,13 @@ def gcx_login(
 
 @gcx_app.command("chq")
 def gcx_chq(
-    sql: str = typer.Argument(..., help="ClickHouse SQL to run through Grafana's PyTorch datasource."),
+    sql: str | None = typer.Argument(None, help="ClickHouse SQL to run through Grafana's PyTorch datasource. Use '-' to read stdin."),
+    sql_file: Annotated[Path | None, typer.Option("--file", "-f", help="Path to a .sql file to run.")] = None,
     output_json: bool = typer.Option(False, "--json", help="Print parsed rows as JSON."),
     raw: bool = typer.Option(False, "--raw", help="Print raw Grafana datasource JSON."),
 ) -> None:
     try:
-        data = clickhouse_query(load_config(), sql)
+        data = clickhouse_query(load_config(), read_sql(sql, sql_file))
     except (GcxError, json.JSONDecodeError, KeyError) as error:
         console.print(f"[red]error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -283,6 +285,18 @@ def gcx_run(ctx: typer.Context) -> None:
     if result.stderr:
         err_console.print(result.stderr, end="")
     raise typer.Exit(result.returncode)
+
+
+def read_sql(sql: str | None, sql_file: Path | None) -> str:
+    if sql and sql_file:
+        raise typer.BadParameter("use SQL argument or --file, not both")
+    if sql_file:
+        return sql_file.read_text()
+    if sql == "-":
+        return sys.stdin.read()
+    if sql:
+        return sql
+    raise typer.BadParameter("provide SQL, '-' for stdin, or --file")
 
 
 def hostname_token_name() -> str:

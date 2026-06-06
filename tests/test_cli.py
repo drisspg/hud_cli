@@ -10,6 +10,25 @@ from hud.cli import app
 runner = CliRunner()
 
 
+def fake_clickhouse_response():
+    return {
+        "results": {
+            "A": {
+                "frames": [
+                    {
+                        "schema": {"fields": [{"name": "conclusion"}, {"name": "n"}]},
+                        "data": {"values": [["success", "failure"], [12, 3]]},
+                    }
+                ]
+            }
+        }
+    }
+
+
+def fake_clickhouse_query(config, sql):
+    return fake_clickhouse_response()
+
+
 def test_help() -> None:
     result = runner.invoke(app, ["--help"])
 
@@ -88,28 +107,45 @@ def test_gcx_login_uses_hud_minted_token(monkeypatch) -> None:
 
 
 def test_gcx_chq_outputs_rows(monkeypatch) -> None:
-    monkeypatch.setattr(
-        cli,
-        "clickhouse_query",
-        lambda config, sql: {
-            "results": {
-                "A": {
-                    "frames": [
-                        {
-                            "schema": {"fields": [{"name": "conclusion"}, {"name": "n"}]},
-                            "data": {"values": [["success", "failure"], [12, 3]]},
-                        }
-                    ]
-                }
-            }
-        },
-    )
+    monkeypatch.setattr(cli, "clickhouse_query", fake_clickhouse_query)
 
     result = runner.invoke(app, ["gcx", "chq", "SELECT conclusion, count() AS n FROM default.workflow_job", "--json"])
 
     assert result.exit_code == 0
     assert '"conclusion": "success"' in result.output
     assert '"n": 3' in result.output
+
+
+def test_gcx_chq_reads_sql_file(monkeypatch, tmp_path: Path) -> None:
+    captured = {}
+
+    def fake_query(config, sql):
+        captured["sql"] = sql
+        return fake_clickhouse_response()
+
+    sql_file = tmp_path / "query.sql"
+    sql_file.write_text("SELECT 1\n")
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, ["gcx", "chq", "--file", str(sql_file), "--json"])
+
+    assert result.exit_code == 0
+    assert captured["sql"] == "SELECT 1\n"
+
+
+def test_gcx_chq_reads_stdin(monkeypatch) -> None:
+    captured = {}
+
+    def fake_query(config, sql):
+        captured["sql"] = sql
+        return fake_clickhouse_response()
+
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, ["gcx", "chq", "-", "--json"], input="SELECT 2\n")
+
+    assert result.exit_code == 0
+    assert captured["sql"] == "SELECT 2\n"
 
 
 def test_gcx_run_reports_missing() -> None:

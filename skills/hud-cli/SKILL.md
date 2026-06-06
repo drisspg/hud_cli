@@ -5,10 +5,12 @@ Use this skill when answering PyTorch CI/CD questions with the local `hud` CLI. 
 ## Core rules
 
 - Prefer `hud gcx chq ... --json` for ClickHouse-backed agent workflows.
+- If `gcx` is missing, run `hud gcx install`; do not suggest `uv tool install gcx` because `gcx` is a Go release binary.
 - Use `hud gcx login` after `gh auth login`; it mints a Grafana token through HUD without printing it.
 - Do not add user-facing direct HUD data API commands. Build common helpers on top of `hud gcx chq`, `hud gcx run`, `gh`, or raw log URLs.
 - Do not print token values.
 - Keep SQL windows and limits explicit for expensive queries.
+- Start with schema discovery (`SHOW TABLES`, `DESCRIBE table`) when unsure.
 
 ## Quick health checks
 
@@ -23,16 +25,30 @@ hud gcx doctor --json
 
 ```bash
 gh auth login --hostname github.com --git-protocol ssh --web
+hud gcx install
 hud gcx login
 ```
 
 ## ClickHouse through Grafana/gcx
 
 ```bash
+# What tables exist?
 hud gcx chq "SHOW TABLES FROM default" --json
+
+# What columns are in the main CI job table?
 hud gcx chq "DESCRIBE default.workflow_job" --json
+
+# CI job outcomes over the last day
 hud gcx chq "SELECT conclusion, count() AS n FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 DAY GROUP BY conclusion ORDER BY n DESC" --json
+
+# Busiest workflows in the last 6 hours
 hud gcx chq "SELECT workflow_name, count() AS jobs FROM default.workflow_job WHERE completed_at > now() - INTERVAL 6 HOUR GROUP BY workflow_name ORDER BY jobs DESC LIMIT 15" --json
+
+# Recent failing jobs with classified failure text
+hud gcx chq "SELECT id, workflow_name, name, tupleElement(torchci_classification, 'line') AS failure_line FROM default.workflow_job WHERE completed_at > now() - INTERVAL 6 HOUR AND conclusion = 'failure' ORDER BY completed_at DESC LIMIT 20" --json
+
+# Recent jobs for a workflow/name pattern
+hud gcx chq "SELECT id, completed_at, conclusion, name FROM default.workflow_job WHERE completed_at > now() - INTERVAL 12 HOUR AND workflow_name = 'pull' AND name ILIKE '%linux%' ORDER BY completed_at DESC LIMIT 50" --json
 ```
 
 ## Grafana/gcx passthrough

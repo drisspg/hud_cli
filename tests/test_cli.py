@@ -52,12 +52,22 @@ def test_gcx_doctor_json_reports_missing() -> None:
     result = runner.invoke(
         app,
         ["gcx", "doctor", "--json"],
-        env={"PATH": "", "GRAFANA_TOKEN": "read-only-token"},
+        env={"PATH": "", "GRAFANA_TOKEN": "read-only-token", "HUD_GCX_PATH": "/tmp/missing-gcx"},
     )
 
     assert result.exit_code == 0
     assert '"available": false' in result.output
     assert '"grafana_token_set": true' in result.output
+
+
+def test_gcx_install(monkeypatch, tmp_path) -> None:
+    managed = tmp_path / "gcx"
+    monkeypatch.setattr(cli, "install_gcx", lambda force=False: managed)
+
+    result = runner.invoke(app, ["gcx", "install"])
+
+    assert result.exit_code == 0
+    assert "gcx" in result.output
 
 
 def test_gcx_login_uses_hud_minted_token(monkeypatch) -> None:
@@ -103,7 +113,7 @@ def test_gcx_chq_outputs_rows(monkeypatch) -> None:
 
 
 def test_gcx_run_reports_missing() -> None:
-    result = runner.invoke(app, ["gcx", "run", "--", "--help"], env={"PATH": ""})
+    result = runner.invoke(app, ["gcx", "run", "--", "--help"], env={"PATH": "", "HUD_GCX_PATH": "/tmp/missing-gcx"})
 
     assert result.exit_code == 1
     assert "gcx is not available" in result.output

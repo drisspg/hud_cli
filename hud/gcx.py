@@ -2,19 +2,24 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 import subprocess
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from curl_cffi import requests
+from platformdirs import user_data_dir
 
 from hud.auth import HudConfig
 
 GRAFANA_SERVER = "https://pytorchci.grafana.net"
 CLICKHOUSE_DATASOURCE_UID = "ceczcsck1b20wb"
+GCX_VERSION = "v0.4.0"
+GCX_INSTALL_DIR = Path(user_data_dir("pytorch-hud", "pytorch")) / "bin"
 
 
 class GcxError(RuntimeError):
@@ -44,7 +49,57 @@ def gcx_status(config: HudConfig) -> GcxStatus:
         path = str(configured_path) if configured_path.exists() else None
         source = "HUD_GCX_PATH/config" if path else f"configured missing: {configured_path}"
         return GcxStatus(path, source, _grafana_token_set())
-    return GcxStatus(shutil.which("gcx"), "PATH" if shutil.which("gcx") else "missing", _grafana_token_set())
+    if path := shutil.which("gcx"):
+        return GcxStatus(path, "PATH", _grafana_token_set())
+    managed_path = managed_gcx_path()
+    if managed_path.exists():
+        return GcxStatus(str(managed_path), "hud gcx install", _grafana_token_set())
+    return GcxStatus(None, "missing", _grafana_token_set())
+
+
+def managed_gcx_path() -> Path:
+    return GCX_INSTALL_DIR / "gcx"
+
+
+def install_gcx(version: str = GCX_VERSION, force: bool = False) -> Path:
+    destination = managed_gcx_path()
+    if destination.exists() and not force:
+        return destination
+    GCX_INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+    archive_path = GCX_INSTALL_DIR / gcx_archive_name(version)
+    url = f"https://github.com/grafana/gcx/releases/download/{version}/{archive_path.name}"
+    response = requests.get(url, impersonate="chrome", timeout=120)
+    response.raise_for_status()
+    archive_path.write_bytes(response.content)
+    with tarfile.open(archive_path, "r:gz") as archive:
+        member = archive.getmember("gcx")
+        extracted = archive.extractfile(member)
+        if extracted is None:
+            raise GcxError(f"gcx binary missing from {archive_path.name}")
+        destination.write_bytes(extracted.read())
+    destination.chmod(0o755)
+    archive_path.unlink(missing_ok=True)
+    return destination
+
+
+def gcx_archive_name(version: str) -> str:
+    os_name = platform.system().lower()
+    machine = platform.machine().lower()
+    match os_name:
+        case "darwin":
+            goos = "darwin"
+        case "linux":
+            goos = "linux"
+        case _:
+            raise GcxError(f"unsupported OS for managed gcx install: {platform.system()}")
+    match machine:
+        case "arm64" | "aarch64":
+            goarch = "arm64"
+        case "x86_64" | "amd64":
+            goarch = "amd64"
+        case _:
+            raise GcxError(f"unsupported architecture for managed gcx install: {platform.machine()}")
+    return f"gcx_{version.removeprefix('v')}_{goos}_{goarch}.tar.gz"
 
 
 def login_with_hud_token(config: HudConfig, token_name: str) -> subprocess.CompletedProcess[str]:

@@ -25,10 +25,11 @@ Primary setup:
 
 ```bash
 gh auth login --hostname github.com --git-protocol ssh --web
+hud gcx install
 hud gcx login
 ```
 
-`hud gcx login` calls `https://hud.pytorch.org/api/gcx-token?token_name=$(hostname)` with your `gh auth token`, then runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token ...` without printing the token.
+`hud gcx install` downloads the managed Grafana `gcx` release binary if `gcx` is not already on PATH. `hud gcx login` calls `https://hud.pytorch.org/api/gcx-token?token_name=$(hostname)` with your `gh auth token`, then runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token ...` without printing the token.
 
 Optional environment variables:
 
@@ -62,13 +63,15 @@ Check active auth/tooling:
 ```bash
 hud doctor
 hud gcx doctor --json
+hud gcx install
 ```
 
 ## Grafana ClickHouse
 
-Authenticate once:
+Install and authenticate once:
 
 ```bash
+hud gcx install
 hud gcx login
 ```
 
@@ -85,6 +88,25 @@ Use JSON for agents:
 
 ```bash
 hud gcx chq "SHOW TABLES FROM default" --json
+```
+
+Common starting points:
+
+```bash
+# What tables exist?
+hud gcx chq "SHOW TABLES FROM default" --json
+
+# What columns are in the main CI job table?
+hud gcx chq "DESCRIBE default.workflow_job" --json
+
+# CI job outcomes over the last day
+hud gcx chq "SELECT conclusion, count() AS n FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 DAY GROUP BY conclusion ORDER BY n DESC" --json
+
+# Busiest workflows in the last 6 hours
+hud gcx chq "SELECT workflow_name, count() AS jobs FROM default.workflow_job WHERE completed_at > now() - INTERVAL 6 HOUR GROUP BY workflow_name ORDER BY jobs DESC LIMIT 15" --json
+
+# Recent failing jobs with failure text
+hud gcx chq "SELECT id, workflow_name, name, tupleElement(torchci_classification, 'line') AS failure_line FROM default.workflow_job WHERE completed_at > now() - INTERVAL 6 HOUR AND conclusion = 'failure' ORDER BY completed_at DESC LIMIT 20" --json
 ```
 
 Pass through to `gcx` when you want any Grafana-backed datasource directly:
@@ -109,6 +131,7 @@ hud log sections /tmp/job.log --start 'Traceback' --end '^$' --json
 
 ## Commands
 
+- `hud gcx install` installs the managed Grafana `gcx` binary when `gcx` is not already available.
 - `hud gcx login` mints a Grafana token through HUD using GitHub auth and logs `gcx` into pytorchci.
 - `hud gcx chq` runs ClickHouse SQL through Grafana's PyTorch ClickHouse datasource.
 - `hud gcx run -- ...` shells out to `gcx` without printing credentials.

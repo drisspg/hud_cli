@@ -15,6 +15,7 @@ from hud.gcx import (
     GcxError,
     clickhouse_query,
     gcx_status,
+    install_gcx,
     login_with_hud_token,
     rows_from_gcx_response,
     run_gcx,
@@ -168,7 +169,7 @@ def auth_setup() -> None:
     )
     table.add_row(
         "Grafana/gcx",
-        "Run `hud gcx login`. It mints a short-lived Grafana token from HUD using your GitHub auth, then runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token ...` without printing the token.",
+        "Run `hud gcx install` if gcx is missing, then `hud gcx login`. Login mints a short-lived Grafana token from HUD using your GitHub auth and runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token ...` without printing the token.",
     )
     table.add_row(
         "ClickHouse",
@@ -214,6 +215,17 @@ def gcx_doctor(
     table.add_row("source", status.source)
     table.add_row("GRAFANA_TOKEN", "set" if status.grafana_token_set else "not set")
     console.print(table)
+
+
+@gcx_app.command("install")
+def gcx_install(
+    force: bool = typer.Option(False, "--force", help="Reinstall even if the managed gcx binary already exists."),
+) -> None:
+    try:
+        console.print(str(install_gcx(force=force)))
+    except Exception as error:
+        console.print(f"[red]error:[/red] {error}")
+        raise typer.Exit(1) from error
 
 
 @gcx_app.command("login")

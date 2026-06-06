@@ -9,5 +9,5 @@
 - Do not add user-facing direct HUD data API commands; common CI/CD helpers should build on `hud gcx chq` or raw log URLs.
 - Prefer one blessed path over backward-compatible fallbacks; this project is early and can make breaking changes freely while iterating.
 - Cap default result sizes and require explicit windows for expensive ClickHouse helpers.
-- Dogfood `hud gcx chq` for CI/CD questions: start with `SHOW TABLES`/`DESCRIBE` when unsure, use `--file query.sql` or `-` stdin for multi-line SQL, then add bounded SQL examples to the skill when they prove useful.
+- Dogfood `hud gcx` for CI/CD questions: start with `hud gcx tables`, `hud gcx describe`, `hud gcx columns`, or `hud gcx sample` when unsure; use `hud gcx chq --file query.sql` or `hud gcx chq -` for multi-line SQL, then add bounded SQL examples to the skill when they prove useful.
 - Do not print HUD-minted gcx tokens, Grafana tokens, GitHub tokens, or raw credentials.

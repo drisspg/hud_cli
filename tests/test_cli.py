@@ -71,7 +71,7 @@ def test_gcx_doctor_json_reports_missing() -> None:
     result = runner.invoke(
         app,
         ["gcx", "doctor", "--json"],
-        env={"PATH": "", "GRAFANA_TOKEN": "read-only-token", "HUD_GCX_PATH": "/tmp/missing-gcx"},
+        env={"PATH": "", "GRAFANA_TOKEN": "read-only-token", "GCX_PATH": "/tmp/missing-gcx"},
     )
 
     assert result.exit_code == 0
@@ -148,8 +148,50 @@ def test_gcx_chq_reads_stdin(monkeypatch) -> None:
     assert captured["sql"] == "SELECT 2\n"
 
 
+@pytest.mark.parametrize(
+    ("args", "expected_sql"),
+    [
+        (["gcx", "tables", "--json"], "SHOW TABLES FROM `default`"),
+        (["gcx", "describe", "workflow_job", "--json"], "DESCRIBE TABLE `default`.`workflow_job`"),
+        (["gcx", "sample", "workflow_job", "--limit", "3", "--json"], "SELECT * FROM `default`.`workflow_job` LIMIT 3"),
+    ],
+)
+def test_gcx_discovery_commands(monkeypatch, args, expected_sql) -> None:
+    captured = {}
+
+    def fake_query(config, sql):
+        captured["sql"] = sql
+        return fake_clickhouse_response()
+
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0
+    assert captured["sql"] == expected_sql
+
+
+def test_gcx_columns_search(monkeypatch) -> None:
+    captured = {}
+
+    def fake_query(config, sql):
+        captured["sql"] = sql
+        return fake_clickhouse_response()
+
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, ["gcx", "columns", "test", "--table", "workflow_job", "--limit", "7", "--json"])
+
+    assert result.exit_code == 0
+    assert "FROM system.columns" in captured["sql"]
+    assert "database = 'default'" in captured["sql"]
+    assert "table = 'workflow_job'" in captured["sql"]
+    assert "ILIKE '%test%'" in captured["sql"]
+    assert "LIMIT 7" in captured["sql"]
+
+
 def test_gcx_run_reports_missing() -> None:
-    result = runner.invoke(app, ["gcx", "run", "--", "--help"], env={"PATH": "", "HUD_GCX_PATH": "/tmp/missing-gcx"})
+    result = runner.invoke(app, ["gcx", "run", "--", "--help"], env={"PATH": "", "GCX_PATH": "/tmp/missing-gcx"})
 
     assert result.exit_code == 1
     assert "gcx is not available" in result.output
@@ -163,7 +205,7 @@ def test_gcx_run_passthrough(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         ["gcx", "run", "--", "datasources", "list"],
-        env={"HUD_GCX_PATH": str(gcx)},
+        env={"GCX_PATH": str(gcx)},
     )
 
     assert result.exit_code == 7

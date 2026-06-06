@@ -245,6 +245,57 @@ def gcx_login(
     raise typer.Exit(result.returncode)
 
 
+@gcx_app.command("tables")
+def gcx_tables(
+    database: str = typer.Option("default", "--database", "-d", help="ClickHouse database to inspect."),
+    output_json: bool = typer.Option(False, "--json", help="Print rows as JSON."),
+) -> None:
+    render_clickhouse_sql(f"SHOW TABLES FROM {quote_identifier(database)}", output_json)
+
+
+@gcx_app.command("describe")
+def gcx_describe(
+    table: str = typer.Argument(..., help="Table to describe, optionally database.table."),
+    database: str = typer.Option("default", "--database", "-d", help="Default database when TABLE is unqualified."),
+    output_json: bool = typer.Option(False, "--json", help="Print rows as JSON."),
+) -> None:
+    render_clickhouse_sql(f"DESCRIBE TABLE {qualified_table_name(table, database)}", output_json)
+
+
+@gcx_app.command("columns")
+def gcx_columns(
+    pattern: str | None = typer.Argument(None, help="Case-insensitive table/column/comment search text."),
+    database: str = typer.Option("default", "--database", "-d", help="ClickHouse database to inspect."),
+    table: str | None = typer.Option(None, "--table", "-t", help="Limit search to one table."),
+    limit: int = typer.Option(100, "--limit", min=1, max=1000),
+    output_json: bool = typer.Option(False, "--json", help="Print rows as JSON."),
+) -> None:
+    filters = [f"database = {sql_string(database)}"]
+    if table:
+        filters.append(f"table = {sql_string(table)}")
+    if pattern:
+        like = sql_string(f"%{pattern}%")
+        filters.append(f"(table ILIKE {like} OR name ILIKE {like} OR comment ILIKE {like})")
+    sql = (
+        "SELECT table, name, type, comment "
+        "FROM system.columns "
+        f"WHERE {' AND '.join(filters)} "
+        "ORDER BY table, position "
+        f"LIMIT {limit}"
+    )
+    render_clickhouse_sql(sql, output_json)
+
+
+@gcx_app.command("sample")
+def gcx_sample(
+    table: str = typer.Argument(..., help="Table to sample, optionally database.table."),
+    database: str = typer.Option("default", "--database", "-d", help="Default database when TABLE is unqualified."),
+    limit: int = typer.Option(10, "--limit", min=1, max=100),
+    output_json: bool = typer.Option(True, "--json/--table", help="Print rows as JSON."),
+) -> None:
+    render_clickhouse_sql(f"SELECT * FROM {qualified_table_name(table, database)} LIMIT {limit}", output_json)
+
+
 @gcx_app.command("chq")
 def gcx_chq(
     sql: str | None = typer.Argument(None, help="ClickHouse SQL to run through Grafana's PyTorch datasource. Use '-' to read stdin."),
@@ -285,6 +336,35 @@ def gcx_run(ctx: typer.Context) -> None:
     if result.stderr:
         err_console.print(result.stderr, end="")
     raise typer.Exit(result.returncode)
+
+
+def render_clickhouse_sql(sql: str, output_json: bool) -> None:
+    try:
+        rows = rows_from_gcx_response(clickhouse_query(load_config(), sql))
+    except (GcxError, json.JSONDecodeError, KeyError) as error:
+        console.print(f"[red]error:[/red] {error}")
+        raise typer.Exit(1) from error
+    if output_json:
+        print_json(rows)
+        return
+    render_rows(rows)
+
+
+def qualified_table_name(table: str, database: str) -> str:
+    parts = table.split(".", 1)
+    if len(parts) == 2:
+        return f"{quote_identifier(parts[0])}.{quote_identifier(parts[1])}"
+    return f"{quote_identifier(database)}.{quote_identifier(table)}"
+
+
+def quote_identifier(value: str) -> str:
+    if not value:
+        raise typer.BadParameter("identifier cannot be empty")
+    return f"`{value.replace('`', '``')}`"
+
+
+def sql_string(value: str) -> str:
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
 def read_sql(sql: str | None, sql_file: Path | None) -> str:

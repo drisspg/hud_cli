@@ -10,7 +10,7 @@ Use this skill when answering PyTorch CI/CD questions with the local `hud` CLI. 
 - Do not add user-facing direct HUD data API commands. Build common helpers on top of `hud gcx chq`, `hud gcx run`, `gh`, or raw log URLs.
 - Do not print token values.
 - Keep SQL windows and limits explicit for expensive queries.
-- Start with schema discovery (`SHOW TABLES`, `DESCRIBE table`) when unsure.
+- Start with schema discovery (`hud gcx tables`, `hud gcx describe TABLE`, `hud gcx columns PATTERN`, `hud gcx sample TABLE`) when unsure.
 - For multi-line SQL, write a `.sql` file and run `hud gcx chq --file query.sql --json`, or pipe with `hud gcx chq - --json`.
 
 ## Quick health checks
@@ -34,10 +34,17 @@ hud gcx login
 
 ```bash
 # What tables exist?
-hud gcx chq "SHOW TABLES FROM default" --json
+hud gcx tables --json
 
 # What columns are in the main CI job table?
-hud gcx chq "DESCRIBE default.workflow_job" --json
+hud gcx describe workflow_job --json
+
+# Search table/column/comment metadata
+hud gcx columns test --json
+hud gcx columns torchci --table workflow_job --json
+
+# Look at a few rows once a table looks relevant
+hud gcx sample workflow_job --limit 5 --json
 
 # CI job outcomes over the last day
 hud gcx chq "SELECT conclusion, count() AS n FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 DAY GROUP BY conclusion ORDER BY n DESC" --json

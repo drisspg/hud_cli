@@ -19,7 +19,7 @@ class HudConfig:
     gcx_path: str | None = None
 
 
-CONFIG_PATH = Path(user_config_dir("pytorch-hud", "pytorch")) / "config.toml"
+CONFIG_PATH = Path(user_config_dir("hud-cli", "pytorch")) / "config.toml"
 
 
 def load_config(config_path: Path = CONFIG_PATH) -> HudConfig:
@@ -29,7 +29,7 @@ def load_config(config_path: Path = CONFIG_PATH) -> HudConfig:
         or file_values.get("base_url")
         or DEFAULT_BASE_URL,
         github_token=_load_github_token(file_values),
-        gcx_path=os.environ.get("HUD_GCX_PATH") or file_values.get("gcx_path"),
+        gcx_path=os.environ.get("GCX_PATH") or file_values.get("gcx_path"),
     )
 
 

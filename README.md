@@ -36,12 +36,12 @@ Optional environment variables:
 ```bash
 export HUD_BASE_URL=https://hud.pytorch.org/api
 export GITHUB_TOKEN=...
-export HUD_GCX_PATH=/path/to/gcx
+export GCX_PATH=/path/to/gcx
 ```
 
 `GITHUB_TOKEN` is used for GitHub-backed access; if it is not set, `hud` automatically tries `gh auth token`.
 
-Optional config file at `~/.config/pytorch-hud/config.toml`:
+Optional config file at `~/.config/hud-cli/config.toml`:
 
 ```toml
 [hud]
@@ -75,11 +75,25 @@ hud gcx install
 hud gcx login
 ```
 
+Discover available ClickHouse data before writing custom queries:
+
+```bash
+hud gcx tables --json
+hud gcx describe workflow_job --json
+hud gcx columns test --json
+hud gcx columns torchci --table workflow_job --json
+hud gcx sample workflow_job --limit 5 --json
+```
+
+`sample` is for structural inspection. For recent or meaningful rows, use `hud gcx chq` with an explicit `WHERE` and `ORDER BY`.
+
+```bash
+hud gcx chq "SELECT id, completed_at, conclusion, workflow_name, name FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 HOUR ORDER BY completed_at DESC LIMIT 5" --json
+```
+
 Run ClickHouse SQL through Grafana's PyTorch ClickHouse datasource:
 
 ```bash
-hud gcx chq "SHOW TABLES FROM default"
-hud gcx chq "DESCRIBE default.workflow_job"
 hud gcx chq "SELECT conclusion, count() AS n FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 DAY GROUP BY conclusion ORDER BY n DESC"
 hud gcx chq "SELECT workflow_name, count() AS jobs FROM default.workflow_job WHERE completed_at > now() - INTERVAL 6 HOUR GROUP BY workflow_name ORDER BY jobs DESC LIMIT 15"
 ```
@@ -109,10 +123,14 @@ Common starting points:
 
 ```bash
 # What tables exist?
-hud gcx chq "SHOW TABLES FROM default" --json
+hud gcx tables --json
 
 # What columns are in the main CI job table?
-hud gcx chq "DESCRIBE default.workflow_job" --json
+hud gcx describe workflow_job --json
+
+# Search table/column/comment metadata
+hud gcx columns test --json
+hud gcx columns torchci --table workflow_job --json
 
 # CI job outcomes over the last day
 hud gcx chq "SELECT conclusion, count() AS n FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 DAY GROUP BY conclusion ORDER BY n DESC" --json
@@ -148,6 +166,7 @@ hud log sections /tmp/job.log --start 'Traceback' --end '^$' --json
 
 - `hud gcx install` installs the managed Grafana `gcx` binary when `gcx` is not already available.
 - `hud gcx login` mints a Grafana token through HUD using GitHub auth and logs `gcx` into pytorchci.
+- `hud gcx tables`, `hud gcx describe`, `hud gcx columns`, and `hud gcx sample` discover available ClickHouse data.
 - `hud gcx chq` runs ClickHouse SQL through Grafana's PyTorch ClickHouse datasource.
 - `hud gcx run -- ...` shells out to `gcx` without printing credentials.
 - `hud job` prints direct raw S3 job log URLs.

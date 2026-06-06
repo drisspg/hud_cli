@@ -19,7 +19,7 @@ from hud.auth import HudConfig
 GRAFANA_SERVER = "https://pytorchci.grafana.net"
 CLICKHOUSE_DATASOURCE_UID = "ceczcsck1b20wb"
 GCX_VERSION = "v0.4.0"
-GCX_INSTALL_DIR = Path(user_data_dir("pytorch-hud", "pytorch")) / "bin"
+GCX_INSTALL_DIR = Path(user_data_dir("hud-cli", "pytorch")) / "bin"
 
 
 class GcxError(RuntimeError):
@@ -47,7 +47,7 @@ def gcx_status(config: HudConfig) -> GcxStatus:
     if config.gcx_path:
         configured_path = Path(config.gcx_path).expanduser()
         path = str(configured_path) if configured_path.exists() else None
-        source = "HUD_GCX_PATH/config" if path else f"configured missing: {configured_path}"
+        source = "GCX_PATH/config" if path else f"configured missing: {configured_path}"
         return GcxStatus(path, source, _grafana_token_set())
     if path := shutil.which("gcx"):
         return GcxStatus(path, "PATH", _grafana_token_set())
@@ -173,7 +173,7 @@ def run_gcx(config: HudConfig, args: list[str]) -> subprocess.CompletedProcess[s
     status = gcx_status(config)
     if not status.path:
         raise GcxError(
-            "gcx is not available. Install gcx v0.2.16+ or use the PyTorch ci-infra grafana workflow with mise, then set HUD_GCX_PATH if gcx is not on PATH."
+            "gcx is not available. Run `hud gcx install`, or set GCX_PATH if gcx is installed outside PATH."
         )
     env = {**os.environ, "GRAFANA_SERVER": GRAFANA_SERVER}
     return subprocess.run(

@@ -140,7 +140,27 @@ hud gcx chq "SELECT workflow_name, count() AS jobs FROM default.workflow_job WHE
 
 # Recent failing jobs with failure text
 hud gcx chq "SELECT id, workflow_name, name, tupleElement(torchci_classification, 'line') AS failure_line FROM default.workflow_job WHERE completed_at > now() - INTERVAL 6 HOUR AND conclusion = 'failure' ORDER BY completed_at DESC LIMIT 20" --json
+
+# Active/incomplete jobs by workflow
+hud gcx chq "SELECT workflow_name, countIf(status != 'completed') AS active_jobs, count() AS jobs FROM default.workflow_job WHERE created_at > now() - INTERVAL 6 HOUR GROUP BY workflow_name HAVING active_jobs > 0 ORDER BY active_jobs DESC LIMIT 10" --json
+
+# Time to failure signal: workflow creation to failed job completion
+hud gcx chq "SELECT j.workflow_name, quantile(0.5)(dateDiff('second', r.created_at, j.completed_at)) / 60 AS p50_signal_min, quantile(0.9)(dateDiff('second', r.created_at, j.completed_at)) / 60 AS p90_signal_min, count() AS failed_jobs FROM default.workflow_job j INNER JOIN default.workflow_run r ON j.run_id = r.id WHERE j.completed_at > now() - INTERVAL 1 DAY AND j.conclusion = 'failure' AND r.created_at > toDateTime64(0, 9) GROUP BY j.workflow_name ORDER BY failed_jobs DESC LIMIT 10" --json
+
+# OSS PR intake by author association
+hud gcx chq "SELECT author_association, countDistinct(number) AS prs FROM default.pull_request WHERE tupleElement(base, 'repo').full_name = 'pytorch/pytorch' AND parseDateTimeBestEffort(created_at) > now() - INTERVAL 7 DAY GROUP BY author_association ORDER BY prs DESC" --json
+
+# Revert commits on main
+hud gcx chq "SELECT count() AS revert_commits FROM default.push ARRAY JOIN push.commits AS commit WHERE push.repository.full_name = 'pytorch/pytorch' AND push.ref = 'refs/heads/main' AND commit.timestamp > now() - INTERVAL 7 DAY AND commit.message ILIKE 'Revert %'" --json
 ```
+
+Query guardrails:
+
+- Always use explicit time windows and `LIMIT` for exploration.
+- Prefer aggregates over raw row dumps.
+- Avoid `SELECT *` except through `hud gcx sample TABLE --limit N`.
+- Treat snapshot/event tables such as `pull_request` carefully; use `countDistinct(number)` for PR counts.
+- Prefer `test_run_summary` for test-file aggregates; use `test_run_s3` only for per-test detail.
 
 Pass through to `gcx` when you want any Grafana-backed datasource directly:
 

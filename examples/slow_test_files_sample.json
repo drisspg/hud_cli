@@ -1,14 +1,14 @@
 [
-  {"file": "test/distributed/test_c10d_nccl", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 834.2},
-  {"file": "test/distributed/test_c10d_nccl", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "multigpu", "time": 642.8},
-  {"file": "test/inductor/test_torchinductor", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 721.4},
-  {"file": "test/inductor/test_torchinductor", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "dynamic", "time": 311.2},
-  {"file": "test/test_nn", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 498.9},
-  {"file": "test/test_ops", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 455.1},
-  {"file": "test/functorch/test_aotdispatch", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 286.3},
-  {"file": "test/export/test_export", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 247.0},
-  {"file": "test/dynamo/test_repros", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 229.5},
-  {"file": "test/test_cuda", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 219.2},
-  {"file": "test/test_cuda", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "slow", "time": 191.6},
-  {"file": "test/inductor/test_triton_heuristics", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 198.7}
+  {"file": "test/distributed/test_c10d_nccl", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 834.2, "tests": 612},
+  {"file": "test/distributed/test_c10d_nccl", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "multigpu", "time": 642.8, "tests": 604},
+  {"file": "test/inductor/test_torchinductor", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 721.4, "tests": 1840},
+  {"file": "test/inductor/test_torchinductor", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "dynamic", "time": 311.2, "tests": 1795},
+  {"file": "test/test_nn", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 498.9, "tests": 932},
+  {"file": "test/test_ops", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 455.1, "tests": 33917},
+  {"file": "test/functorch/test_aotdispatch", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 286.3, "tests": 710},
+  {"file": "test/export/test_export", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 247.0, "tests": 421},
+  {"file": "test/dynamo/test_repros", "base_name": "linux-jammy-py3.10-gcc11", "test_config": "default", "time": 229.5, "tests": 388},
+  {"file": "test/test_cuda", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 219.2, "tests": 1250},
+  {"file": "test/test_cuda", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "slow", "time": 191.6, "tests": 1225},
+  {"file": "test/inductor/test_triton_heuristics", "base_name": "linux-jammy-cuda12.8-py3.10-gcc11", "test_config": "default", "time": 198.7, "tests": 265}
 ]

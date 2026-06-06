@@ -24,21 +24,37 @@ def main(
             x=[row["total_time"] for row in summaries],
             y=[row["file"] for row in summaries],
             orientation="h",
+            marker={
+                "color": [row["max_tests"] for row in summaries],
+                "colorscale": "Viridis",
+                "colorbar": {"title": "Max tests"},
+            },
+            text=[f"{row['max_tests']:,} tests" for row in summaries],
+            textposition="outside",
             customdata=[
-                [row["max_time"], row["entry_count"], row["configs"]] for row in summaries
+                [
+                    row["max_time"],
+                    row["max_tests"],
+                    row["total_tests"],
+                    row["entry_count"],
+                    row["configs"],
+                ]
+                for row in summaries
             ],
             hovertemplate=(
                 "<b>%{y}</b><br>"
                 "total avg runtime: %{x:.2f}s<br>"
                 "slowest config: %{customdata[0]:.2f}s<br>"
-                "test/config rows: %{customdata[1]}<br>"
-                "configs:<br>%{customdata[2]}"
+                "max tests in one config: %{customdata[1]:,}<br>"
+                "tests across shown configs: %{customdata[2]:,}<br>"
+                "test/config rows: %{customdata[3]}<br>"
+                "configs:<br>%{customdata[4]}"
                 "<extra></extra>"
             ),
         )
     )
     figure.update_layout(
-        title=f"Slowest PyTorch test files — {len(rows)} total test/config rows",
+        title=f"Slowest PyTorch test files — {len(rows)} total test/config rows, colored by # tests",
         xaxis_title="Total average runtime across configs/jobs (seconds)",
         yaxis_title="Test file",
         yaxis={"autorange": "reversed"},
@@ -64,6 +80,8 @@ def summarize(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
                 "file": file,
                 "total_time": sum(times),
                 "max_time": max(times) if times else 0.0,
+                "max_tests": max(row_tests(row) for row in sorted_rows),
+                "total_tests": sum(row_tests(row) for row in sorted_rows),
                 "entry_count": len(file_rows),
                 "configs": "<br>".join(format_config(row) for row in sorted_rows[:10]),
             }
@@ -75,8 +93,12 @@ def row_time(row: dict[str, Any]) -> float:
     return float(row.get("time") or 0)
 
 
+def row_tests(row: dict[str, Any]) -> int:
+    return int(float(row.get("tests") or row.get("test_count") or row.get("num_tests") or 0))
+
+
 def format_config(row: dict[str, Any]) -> str:
-    return f"{row_time(row):.2f}s — {row.get('base_name') or 'unknown job'} / {row.get('test_config') or 'unknown config'}"
+    return f"{row_time(row):.2f}s, {row_tests(row):,} tests — {row.get('base_name') or 'unknown job'} / {row.get('test_config') or 'unknown config'}"
 
 
 if __name__ == "__main__":

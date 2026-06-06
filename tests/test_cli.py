@@ -1,10 +1,11 @@
+import subprocess
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 import hud.cli as cli
-from hud.cli import app, parse_params, parse_repo
+from hud.cli import app
 
 runner = CliRunner()
 
@@ -13,7 +14,11 @@ def test_help() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    assert "PyTorch HUD" in result.output
+    assert "PyTorch CI" in result.output
+    assert "gcx" in result.output
+    assert "log" in result.output
+    assert "status" not in result.output
+    assert "recipe" not in result.output
 
 
 @pytest.mark.parametrize("args", [["doctor"], ["auth", "doctor"]])
@@ -21,10 +26,10 @@ def test_auth_doctor(args) -> None:
     result = runner.invoke(app, args)
 
     assert result.exit_code == 0
-    assert "HUD auth" in result.output
-    assert "HUD_API_TOKEN" in result.output
+    assert "hud auth" in result.output
+    assert "GITHUB_TOKEN/gh auth" in result.output
     assert "GRAFANA_TOKEN" in result.output
-    assert "gcx" in result.output
+    assert "Grafana gcx" in result.output
 
 
 def test_auth_setup() -> None:
@@ -32,8 +37,15 @@ def test_auth_setup() -> None:
 
     assert result.exit_code == 0
     assert "gh auth login" in result.output
-    assert "HUD_API_TOKEN" in result.output
-    assert "pytorchci.grafana.net" in result.output
+    assert "hud gcx login" in result.output
+    assert "hud gcx chq" in result.output
+
+
+def test_removed_hud_rate_limited_commands() -> None:
+    for args in [["status"], ["query"], ["recipe"], ["search"]]:
+        result = runner.invoke(app, args)
+        assert result.exit_code != 0
+        assert "No such command" in result.output
 
 
 def test_gcx_doctor_json_reports_missing() -> None:
@@ -46,6 +58,48 @@ def test_gcx_doctor_json_reports_missing() -> None:
     assert result.exit_code == 0
     assert '"available": false' in result.output
     assert '"grafana_token_set": true' in result.output
+
+
+def test_gcx_login_uses_hud_minted_token(monkeypatch) -> None:
+    captured = {}
+
+    def fake_login(config, token_name):
+        captured["token_name"] = token_name
+        return subprocess.CompletedProcess(["gcx"], 0, "logged in\n", "")
+
+    monkeypatch.setattr(cli, "login_with_hud_token", fake_login)
+    monkeypatch.setattr(cli, "hostname_token_name", lambda: "test-host")
+
+    result = runner.invoke(app, ["gcx", "login"])
+
+    assert result.exit_code == 0
+    assert captured["token_name"] == "test-host"
+    assert "logged in" in result.output
+
+
+def test_gcx_chq_outputs_rows(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "clickhouse_query",
+        lambda config, sql: {
+            "results": {
+                "A": {
+                    "frames": [
+                        {
+                            "schema": {"fields": [{"name": "conclusion"}, {"name": "n"}]},
+                            "data": {"values": [["success", "failure"], [12, 3]]},
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    result = runner.invoke(app, ["gcx", "chq", "SELECT conclusion, count() AS n FROM default.workflow_job", "--json"])
+
+    assert result.exit_code == 0
+    assert '"conclusion": "success"' in result.output
+    assert '"n": 3' in result.output
 
 
 def test_gcx_run_reports_missing() -> None:
@@ -69,93 +123,6 @@ def test_gcx_run_passthrough(tmp_path: Path) -> None:
     assert result.exit_code == 7
     assert "datasources" in result.output
     assert "list" in result.output
-
-
-def test_parse_repo() -> None:
-    assert parse_repo("pytorch/pytorch") == ("pytorch", "pytorch")
-
-
-def test_parse_params() -> None:
-    assert parse_params(["limit=10", "enabled=true", "ratio=1.5", "name=linux"]) == {
-        "limit": 10,
-        "enabled": True,
-        "ratio": 1.5,
-        "name": "linux",
-    }
-
-
-def test_query_list() -> None:
-    result = runner.invoke(app, ["query", "list"])
-
-    assert result.exit_code == 0
-    assert "queued_jobs" in result.output
-    assert "master_commit_red" in result.output
-
-
-def test_query_explain_json() -> None:
-    result = runner.invoke(app, ["query", "explain", "queued_jobs", "--json"])
-
-    assert result.exit_code == 0
-    assert '"name": "queued_jobs"' in result.output
-
-
-@pytest.mark.parametrize(
-    ("args", "expected_query", "expected_params"),
-    [
-        (["queued"], "queued_jobs", {}),
-        (["trunk-red", "--days", "3"], "master_commit_red", {"granularity": "day", "usePercentage": True}),
-        (["flaky-test", "test_foo", "--days", "1"], "flaky_tests/across_jobs", {"test_name": "test_foo"}),
-        (["tts", "--percentile", "--days", "1"], "tts_percentile", {}),
-        (["disabled-tests", "--days", "2"], "disabled_test_historical", {"label": "skipped"}),
-        (["slow-test-files", "--limit", "2"], "test_time_per_file", {}),
-    ],
-)
-def test_recipe_batch_uses_named_queries(monkeypatch, args, expected_query, expected_params) -> None:
-    fake_client = FakeClient()
-    monkeypatch.setattr(cli, "new_client", lambda: fake_client)
-
-    result = runner.invoke(app, ["recipe", *args])
-
-    assert result.exit_code == 0
-    query_name, params = fake_client.calls[0]
-    assert query_name == expected_query
-    assert "startTime" in params or expected_query in {"queued_jobs", "test_time_per_file"}
-    assert "stopTime" in params or expected_query in {"queued_jobs", "test_time_per_file"}
-    for key, value in expected_params.items():
-        assert params[key] == value
-    if expected_query == "test_time_per_file":
-        assert result.output.index('"file": "test_slow"') < result.output.index('"file": "test_medium"')
-        assert "test_fast" not in result.output
-    else:
-        assert '"ok": true' in result.output
-
-
-def test_search_failures_uses_bounded_search(monkeypatch) -> None:
-    fake_client = FakeClient()
-    monkeypatch.setattr(cli, "new_client", lambda: fake_client)
-
-    result = runner.invoke(
-        app,
-        ["search", "failures", "CUDA out of memory", "--workflow-name", "linux", "--days", "3"],
-    )
-
-    assert result.exit_code == 0
-    assert fake_client.search_calls[0]["failure"] == "CUDA out of memory"
-    assert fake_client.search_calls[0]["workflow_name"] == "linux"
-    assert fake_client.search_calls[0]["days"] == 3
-    assert '"matches": []' in result.output
-
-
-def test_status_compact_json_filters_failures(monkeypatch) -> None:
-    fake_client = FakeClient()
-    monkeypatch.setattr(cli, "new_client", lambda: fake_client)
-
-    result = runner.invoke(app, ["status", "main", "--failures", "--compact-json"])
-
-    assert result.exit_code == 0
-    assert '"short_sha": "abcdef1234"' in result.output
-    assert '"name": "linux-test"' in result.output
-    assert '"name": "macos-test"' not in result.output
 
 
 def test_job_summary_includes_direct_log_url() -> None:
@@ -226,72 +193,3 @@ def test_log_sections(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert '"section_count": 1' in result.output
     assert "interesting" in result.output
-
-
-def test_query_source(monkeypatch) -> None:
-    monkeypatch.setattr(cli, "fetch_query_source", lambda name, filename: f"{name}:{filename}")
-
-    result = runner.invoke(app, ["query", "source", "queued_jobs", "--json"])
-
-    assert result.exit_code == 0
-    assert '"query_sql": "queued_jobs:query.sql"' in result.output
-    assert '"params_json": "queued_jobs:params.json"' in result.output
-
-
-class FakeClient:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict]] = []
-        self.search_calls: list[dict] = []
-
-    def clickhouse_query(self, name: str, parameters: dict):
-        self.calls.append((name, parameters))
-        if name == "test_time_per_file":
-            return [
-                {"file": "test_fast", "base_name": "linux", "test_config": "default", "time": 1.0},
-                {"file": "test_slow", "base_name": "linux", "test_config": "default", "time": 10.0},
-                {"file": "test_medium", "base_name": "linux", "test_config": "default", "time": 5.0},
-            ]
-        return {"ok": True, "query": name, "parameters": parameters}
-
-    def similar_failures(
-        self,
-        failure: str,
-        repo: str | None,
-        workflow_name: str | None,
-        branch_name: str | None,
-        start_date: str | None,
-        end_date: str | None,
-        min_score: float,
-        days: int,
-    ) -> dict:
-        self.search_calls.append(
-            {
-                "failure": failure,
-                "repo": repo,
-                "workflow_name": workflow_name,
-                "branch_name": branch_name,
-                "start_date": start_date,
-                "end_date": end_date,
-                "min_score": min_score,
-                "days": days,
-            }
-        )
-        return {"matches": [], "total_matches": 0}
-
-    def hud_data(
-        self, repo_owner: str, repo_name: str, branch_or_sha: str, page: int, per_page: int
-    ) -> dict:
-        return {
-            "jobNames": ["linux-test", "macos-test"],
-            "shaGrid": [
-                {
-                    "sha": "abcdef1234567890",
-                    "commitTitle": "test commit",
-                    "author": "dev",
-                    "jobs": [
-                        {"id": 0, "conclusion": "failure", "failureLine": "RuntimeError"},
-                        {"id": 1, "conclusion": "success"},
-                    ],
-                }
-            ],
-        }

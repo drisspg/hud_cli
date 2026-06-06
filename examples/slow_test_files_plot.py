@@ -13,7 +13,7 @@ app = typer.Typer(no_args_is_help=True)
 
 @app.command()
 def main(
-    input_json: Annotated[Path, typer.Argument(help="JSON output from `hud recipe slow-test-files --json`.")],
+    input_json: Annotated[Path, typer.Argument(help="JSON row output from `hud gcx chq ... --json`.")],
     output_html: Annotated[Path, typer.Option("--output", "-o", help="HTML report path.")] = Path("slow-test-files.html"),
     limit: Annotated[int, typer.Option("--limit", min=1, max=500)] = 50,
 ) -> None:

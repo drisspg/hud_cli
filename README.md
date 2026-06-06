@@ -1,13 +1,13 @@
-# pytorch-hud-cli
+# hud_cli
 
-`hud` is a Typer CLI for PyTorch CI/CD data from HUD, HUD-backed ClickHouse queries, and existing PyTorch data tools such as Grafana `gcx`. The goal is to make questions about trunk health, failures, flaky tests, queues, time-to-land, and test history accessible to PyTorch engineers and to coding agents.
+`hud` is a Typer CLI for PyTorch CI/CD data built around Grafana `gcx`, GitHub `gh`, and raw CI logs. The goal is to make questions about trunk health, failures, flaky tests, queues, time-to-land, and test history accessible to PyTorch engineers and coding agents.
 
-This is intentionally a catch-all workflow CLI, not a replacement for every data source. Use `gcx` for Grafana datasource access, `gh` for GitHub workflow mechanics, and HUD APIs for HUD-specific CI convenience.
+The blessed data path is Grafana `gcx`: HUD mints a Grafana token from your GitHub auth, then `gcx` queries Grafana datasources such as ClickHouse.
 
 ## Install
 
 ```bash
-uv tool install git+https://github.com/drisspg/pytorch-hud-cli.git
+uv tool install git+https://github.com/drisspg/hud_cli.git
 hud --help
 ```
 
@@ -21,120 +21,83 @@ uv run --extra dev pytest
 
 ## Authentication
 
-The default path is tokenless HUD access using browser impersonation. If HUD blocks a request, the CLI tells you what to try next.
+Primary setup:
+
+```bash
+gh auth login --hostname github.com --git-protocol ssh --web
+hud gcx login
+```
+
+`hud gcx login` calls `https://hud.pytorch.org/api/gcx-token?token_name=$(hostname)` with your `gh auth token`, then runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token ...` without printing the token.
 
 Optional environment variables:
 
 ```bash
 export HUD_BASE_URL=https://hud.pytorch.org/api
-export HUD_API_TOKEN=...
 export GITHUB_TOKEN=...
-export GRAFANA_TOKEN=...
 export HUD_GCX_PATH=/path/to/gcx
 ```
 
-`HUD_API_TOKEN` is the only token used for authenticated HUD API requests. `GITHUB_TOKEN` is used for GitHub-backed source lookups; if it is not set, `hud` automatically tries `gh auth token`.
+`GITHUB_TOKEN` is used for GitHub-backed access; if it is not set, `hud` automatically tries `gh auth token`.
 
 Optional config file at `~/.config/pytorch-hud/config.toml`:
 
 ```toml
 [hud]
 base_url = "https://hud.pytorch.org/api"
-api_token = "..."
 github_token = "..."
 gcx_path = "/path/to/gcx"
 ```
 
-`GRAFANA_TOKEN` should be a read-only token. Grafana/gcx is often the best broad data path across ClickHouse, Prometheus, and CI dashboards when a HUD API token is unavailable. `gcx login` for pytorchci requires a token: `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token $GRAFANA_TOKEN`. If Grafana reports missing `serviceaccounts:read`, ask a PyTorch Grafana org admin/CI infra owner to issue a Viewer/read-only token or grant service-account creator access. `hud` only reports whether tokens are set and never prints their values.
+`hud` only reports whether tokens are set and never prints their values.
 
-Print the setup instructions:
+Print setup instructions:
 
 ```bash
 hud auth setup
 ```
 
-Check the active auth path:
+Check active auth/tooling:
 
 ```bash
-hud auth doctor
+hud doctor
+hud gcx doctor --json
 ```
 
-## Examples
+## Grafana ClickHouse
 
-Recent trunk commits:
+Authenticate once:
 
 ```bash
-hud status main --repo pytorch/pytorch
+hud gcx login
 ```
 
-Recent trunk failures:
+Run ClickHouse SQL through Grafana's PyTorch ClickHouse datasource:
 
 ```bash
-hud status main --failures
+hud gcx chq "SHOW TABLES FROM default"
+hud gcx chq "DESCRIBE default.workflow_job"
+hud gcx chq "SELECT conclusion, count() AS n FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 DAY GROUP BY conclusion ORDER BY n DESC"
+hud gcx chq "SELECT workflow_name, count() AS jobs FROM default.workflow_job WHERE completed_at > now() - INTERVAL 6 HOUR GROUP BY workflow_name ORDER BY jobs DESC LIMIT 15"
 ```
 
-Normalized bounded JSON for an agent:
+Use JSON for agents:
 
 ```bash
-hud status main --failures --job-regex linux --compact-json
+hud gcx chq "SHOW TABLES FROM default" --json
 ```
 
-Raw HUD JSON for an agent:
+Pass through to `gcx` when you want any Grafana-backed datasource directly:
 
 ```bash
-hud status main --per-page 25 --json
+hud gcx run -- datasources list
+hud gcx run -- metrics query -d grafanacloud-pytorchci-prom 'up' --from now-1h --to now
 ```
 
-Search historical failures with HUD/OpenSearch:
+## Raw CI logs
 
 ```bash
-hud search failures 'CUDA out of memory' --repo pytorch/pytorch --branch-name main --days 14 --json
-hud search failures 'PACKAGES DO NOT MATCH THE HASHES' --workflow-name linux --min-score 2 --json
-```
-
-Run a curated recipe:
-
-```bash
-hud recipe queued
-hud recipe trunk-red --days 7
-hud recipe flaky-test test_name --days 7
-hud recipe disabled-tests --days 30
-hud recipe tts --days 7
-hud recipe tts --percentile --days 7
-hud recipe slow-test-files --limit 20
-hud recipe slow-test-files --periodic --limit 20
-```
-
-Run a named ClickHouse query:
-
-```bash
-hud query run queued_jobs
-```
-
-Pass query parameters:
-
-```bash
-hud query run flaky_tests/across_jobs -p startTime=2026-06-01T00:00:00 -p stopTime=2026-06-05T00:00:00
-```
-
-Inspect query metadata from the local catalog and `pytorch/test-infra` sources:
-
-```bash
-hud query list
-hud query explain queued_jobs --json
-hud query source queued_jobs --json
-hud query source flaky_tests/across_jobs --no-params --text
-```
-
-Inspect a job:
-
-```bash
-hud job 123456789 --artifacts --log-url --json
-```
-
-Fetch and search raw job logs:
-
-```bash
+hud job 123456789 --json
 hud log url 123456789
 hud log download 123456789 -o /tmp/job.log
 hud log search 'RuntimeError|FAILED' --path /tmp/job.log --json
@@ -144,34 +107,15 @@ hud log tests /tmp/job.log --json
 hud log sections /tmp/job.log --start 'Traceback' --end '^$' --json
 ```
 
-Check Grafana `gcx` availability and token state:
+## Commands
 
-```bash
-hud gcx doctor
-hud gcx doctor --json
-```
-
-Pass through to `gcx` when you want Grafana-backed data sources:
-
-```bash
-hud gcx run -- datasources list
-hud gcx run -- metrics query -d grafanacloud-pytorchci-prom 'up' --from now-1h --to now
-```
-
-## Initial commands
-
-- `hud status` reads the HUD commit grid and can emit normalized `--compact-json` with status/name/failure filters.
-- `hud job` reads job metadata and optionally artifacts/log URL.
-- `hud search failures` searches historical HUD failures with bounded windows.
+- `hud gcx login` mints a Grafana token through HUD using GitHub auth and logs `gcx` into pytorchci.
+- `hud gcx chq` runs ClickHouse SQL through Grafana's PyTorch ClickHouse datasource.
+- `hud gcx run -- ...` shells out to `gcx` without printing credentials.
+- `hud job` prints direct raw S3 job log URLs.
 - `hud log ...` prints direct raw S3 log URLs, downloads logs, searches logs, extracts common patterns/test summaries, and filters bounded sections.
-- `hud recipe ...` runs curated bounded workflows for common PyTorch CI questions.
-- `hud query run` runs any named HUD ClickHouse query exposed by the HUD API.
-- `hud query list`, `hud query explain`, and `hud query source` show local and `pytorch/test-infra` query metadata.
-- `hud query examples` prints known useful query shapes.
-- `hud auth doctor` explains how the CLI is authenticating.
-- `hud gcx doctor` checks whether Grafana `gcx` and `GRAFANA_TOKEN` are available.
-- `hud gcx run -- ...` safely shells out to `gcx` without printing credentials.
+- `hud auth doctor` / `hud doctor` explain how the CLI is authenticating.
 
 ## Direction
 
-See `docs/PLAN.md` for the implementation plan, `docs/COVERAGE.md` for the upstream parity audit, and `skills/hud-cli/SKILL.md` for the agent-facing usage contract.
+This project intentionally prefers one blessed path over backward-compatible fallbacks while it is early. Build common CI/CD question helpers on top of `hud gcx chq` and `gcx` datasources rather than direct HUD rate-limited data endpoints.

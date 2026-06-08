@@ -40,7 +40,6 @@ BLOCKED_CLICKHOUSE_KEYWORDS = {
     "RESTORE",
     "REVOKE",
     "SET",
-    "SYSTEM",
     "TRUNCATE",
     "UPDATE",
     "USE",

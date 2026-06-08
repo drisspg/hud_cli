@@ -39,6 +39,7 @@ def test_gcx_status_finds_managed_path(monkeypatch, tmp_path: Path) -> None:
         "SHOW TABLES FROM default",
         "DESCRIBE TABLE default.workflow_job",
         "EXPLAIN SELECT count() FROM default.workflow_job",
+        "SELECT table, name FROM system.columns WHERE database = 'default'",
         "SELECT 'DROP TABLE is just a string';",
         "-- DROP TABLE in a comment\nSELECT 1",
     ],

@@ -42,6 +42,8 @@ hud gcx login
 
 ## ClickHouse through Grafana/gcx
 
+HUD only allows read-only ClickHouse statements through `hud gcx chq` and the discovery helpers; write/admin SQL and multi-statement queries are blocked before dispatch.
+
 ```bash
 # What tables exist?
 hud gcx tables --json

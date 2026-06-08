@@ -91,7 +91,7 @@ hud gcx sample workflow_job --limit 5 --json
 hud gcx chq "SELECT id, completed_at, conclusion, workflow_name, name FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 HOUR ORDER BY completed_at DESC LIMIT 5" --json
 ```
 
-Run ClickHouse SQL through Grafana's PyTorch ClickHouse datasource:
+Run read-only ClickHouse SQL through Grafana's PyTorch ClickHouse datasource. HUD blocks write/admin SQL such as `INSERT`, `ALTER`, `DROP`, `TRUNCATE`, `OPTIMIZE`, `SYSTEM`, and multi-statement queries before sending them to Grafana.
 
 ```bash
 hud gcx chq "SELECT conclusion, count() AS n FROM default.workflow_job WHERE completed_at > now() - INTERVAL 1 DAY GROUP BY conclusion ORDER BY n DESC"

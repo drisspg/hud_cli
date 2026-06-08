@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -20,6 +21,32 @@ GRAFANA_SERVER = "https://pytorchci.grafana.net"
 CLICKHOUSE_DATASOURCE_UID = "ceczcsck1b20wb"
 GCX_VERSION = "v0.4.0"
 GCX_INSTALL_DIR = Path(user_data_dir("hud-cli", "pytorch")) / "bin"
+READ_ONLY_CLICKHOUSE_COMMANDS = {"DESC", "DESCRIBE", "EXPLAIN", "SELECT", "SHOW", "WITH"}
+BLOCKED_CLICKHOUSE_KEYWORDS = {
+    "ALTER",
+    "ATTACH",
+    "BACKUP",
+    "CREATE",
+    "DELETE",
+    "DETACH",
+    "DROP",
+    "GRANT",
+    "INSERT",
+    "KILL",
+    "OPTIMIZE",
+    "OUTFILE",
+    "RENAME",
+    "REPLACE",
+    "RESTORE",
+    "REVOKE",
+    "SET",
+    "SYSTEM",
+    "TRUNCATE",
+    "UPDATE",
+    "USE",
+    "WATCH",
+}
+SQL_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 class GcxError(RuntimeError):
@@ -137,6 +164,7 @@ def mint_gcx_token(config: HudConfig, token_name: str) -> str:
 
 
 def clickhouse_query(config: HudConfig, sql: str) -> dict[str, Any]:
+    validate_read_only_clickhouse_sql(sql)
     payload = {
         "queries": [
             {
@@ -160,6 +188,81 @@ def clickhouse_query(config: HudConfig, sql: str) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def validate_read_only_clickhouse_sql(sql: str) -> None:
+    tokens, has_statement_separator = clickhouse_sql_tokens(sql)
+    if not tokens:
+        raise GcxError("ClickHouse SQL cannot be empty")
+    if has_statement_separator:
+        raise GcxError("ClickHouse SQL must be a single read-only statement")
+    if tokens[0] not in READ_ONLY_CLICKHOUSE_COMMANDS:
+        raise GcxError("ClickHouse SQL must start with SELECT, WITH, SHOW, DESCRIBE, or EXPLAIN")
+    if blocked := sorted(set(tokens) & BLOCKED_CLICKHOUSE_KEYWORDS):
+        raise GcxError(f"ClickHouse SQL contains blocked write/admin keyword: {', '.join(blocked)}")
+
+
+def clickhouse_sql_tokens(sql: str) -> tuple[list[str], bool]:
+    tokens = []
+    has_statement_separator = False
+    after_statement_end = False
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        next_char = sql[index + 1] if index + 1 < len(sql) else ""
+        if char in {"'", '"', "`"}:
+            index = skip_quoted_sql(sql, index, char)
+            continue
+        if char == "-" and next_char == "-":
+            index = skip_line_comment(sql, index + 2)
+            continue
+        if char == "#":
+            index = skip_line_comment(sql, index + 1)
+            continue
+        if char == "/" and next_char == "*":
+            index = skip_block_comment(sql, index + 2)
+            continue
+        if char == ";":
+            after_statement_end = bool(tokens)
+            index += 1
+            continue
+        match = SQL_TOKEN_RE.match(sql, index)
+        if match:
+            has_statement_separator = has_statement_separator or after_statement_end
+            tokens.append(match.group(0).upper())
+            index = match.end()
+            continue
+        index += 1
+    return tokens, has_statement_separator
+
+
+def skip_quoted_sql(sql: str, index: int, quote_char: str) -> int:
+    index += 1
+    while index < len(sql):
+        if sql[index] == "\\":
+            index += 2
+            continue
+        if sql[index] == quote_char:
+            if quote_char in {"'", '"'} and index + 1 < len(sql) and sql[index + 1] == quote_char:
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return index
+
+
+def skip_line_comment(sql: str, index: int) -> int:
+    while index < len(sql) and sql[index] not in {"\n", "\r"}:
+        index += 1
+    return index
+
+
+def skip_block_comment(sql: str, index: int) -> int:
+    while index + 1 < len(sql):
+        if sql[index] == "*" and sql[index + 1] == "/":
+            return index + 2
+        index += 1
+    return index
+
+
 def rows_from_gcx_response(data: dict[str, Any]) -> list[dict[str, Any]]:
     frame = data["results"]["A"]["frames"][0]
     columns = [field["name"] for field in frame["schema"]["fields"]]
@@ -170,6 +273,7 @@ def rows_from_gcx_response(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def run_gcx(config: HudConfig, args: list[str]) -> subprocess.CompletedProcess[str]:
+    validate_gcx_passthrough_args(args)
     status = gcx_status(config)
     if not status.path:
         raise GcxError(
@@ -182,6 +286,49 @@ def run_gcx(config: HudConfig, args: list[str]) -> subprocess.CompletedProcess[s
         capture_output=True,
         check=False,
         env=env,
+    )
+
+
+def validate_gcx_passthrough_args(args: list[str]) -> None:
+    if len(args) < 2 or args[:2] != ["api", "/api/ds/query"]:
+        return
+    payload = gcx_api_payload(args)
+    if payload is None:
+        return
+    queries = payload.get("queries", [])
+    if not isinstance(queries, list):
+        return
+    for query in queries:
+        if not isinstance(query, dict):
+            continue
+        datasource = query.get("datasource", {})
+        raw_sql = query.get("rawSql")
+        if (
+            isinstance(datasource, dict)
+            and isinstance(raw_sql, str)
+            and is_clickhouse_datasource(datasource)
+        ):
+            validate_read_only_clickhouse_sql(raw_sql)
+
+
+def gcx_api_payload(args: list[str]) -> dict[str, Any] | None:
+    for index, arg in enumerate(args):
+        if arg in {"-d", "--data"} and index + 1 < len(args):
+            try:
+                data = json.loads(args[index + 1])
+            except json.JSONDecodeError as error:
+                raise GcxError(
+                    "gcx /api/ds/query payload must be JSON so HUD can enforce read-only ClickHouse SQL"
+                ) from error
+            if isinstance(data, dict):
+                return data
+    return None
+
+
+def is_clickhouse_datasource(datasource: dict[str, Any]) -> bool:
+    return (
+        datasource.get("uid") == CLICKHOUSE_DATASOURCE_UID
+        or datasource.get("type") == "grafana-clickhouse-datasource"
     )
 
 

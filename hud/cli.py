@@ -15,6 +15,7 @@ from hud.auth import CONFIG_PATH, load_config
 from hud.gcx import (
     GcxError,
     clickhouse_query,
+    gcx_failure_message,
     gcx_status,
     install_gcx,
     login_with_hud_token,
@@ -233,15 +234,25 @@ def gcx_install(
 def gcx_login(
     token_name: str | None = typer.Option(None, "--token-name", help="Name for the HUD-minted Grafana token."),
 ) -> None:
+    config = load_config()
     try:
-        result = login_with_hud_token(load_config(), token_name or hostname_token_name())
+        result = login_with_hud_token(config, token_name or hostname_token_name())
     except GcxError as error:
         console.print(f"[red]error:[/red] {error}")
         raise typer.Exit(1) from error
+    if result.returncode != 0:
+        console.print(f"[red]error:[/red] {gcx_failure_message(result, 'gcx login failed')}")
+        raise typer.Exit(result.returncode)
     if result.stdout:
         console.print(result.stdout, end="")
     if result.stderr:
         err_console.print(result.stderr, end="")
+    try:
+        clickhouse_query(config, "SELECT 1")
+    except (GcxError, json.JSONDecodeError, KeyError) as error:
+        console.print(f"[red]error:[/red] gcx login completed, but HUD ClickHouse verification failed: {error}")
+        raise typer.Exit(1) from error
+    console.print("[green]Verified HUD ClickHouse access with SELECT 1.[/green]")
     raise typer.Exit(result.returncode)
 
 

@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,10 @@ from hud.auth import HudConfig
 from hud.gcx import (
     GcxError,
     gcx_archive_name,
+    gcx_failure_message,
     gcx_status,
+    gcx_subprocess_env,
+    login_with_hud_token,
     validate_gcx_passthrough_args,
     validate_read_only_clickhouse_sql,
 )
@@ -29,6 +33,57 @@ def test_gcx_status_finds_managed_path(monkeypatch, tmp_path: Path) -> None:
 
     assert status.path == str(managed)
     assert status.source == "hud gcx install"
+
+
+def test_login_with_hud_token_matches_explicit_gcx_login_shape(monkeypatch) -> None:
+    captured = {}
+
+    def fake_run_gcx(config, args):
+        captured["args"] = args
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("hud.gcx.mint_gcx_token", lambda config, token_name: "grafana-token")
+    monkeypatch.setattr("hud.gcx.run_gcx", fake_run_gcx)
+
+    login_with_hud_token(HudConfig(github_token="github-token"), "host-token")
+
+    assert captured["args"] == [
+        "login",
+        "pytorchci",
+        "--server",
+        "https://pytorchci.grafana.net",
+        "--yes",
+        "--token",
+        "grafana-token",
+    ]
+
+
+def test_gcx_failure_message_explains_unauthorized() -> None:
+    result = subprocess.CompletedProcess(["gcx"], 1, "", 'Error: HTTP 401\n{"message":"Unauthorized"}')
+
+    message = gcx_failure_message(result, "fallback")
+
+    assert "hud gcx login" in message
+    assert "gh auth status" in message
+    assert "--token ..." in message
+
+
+def test_gcx_subprocess_env_removes_server_without_token(monkeypatch) -> None:
+    monkeypatch.setenv("GRAFANA_SERVER", "https://example.invalid")
+    monkeypatch.delenv("GRAFANA_TOKEN", raising=False)
+
+    env = gcx_subprocess_env()
+
+    assert "GRAFANA_SERVER" not in env
+
+
+def test_gcx_subprocess_env_sets_server_for_token_mode(monkeypatch) -> None:
+    monkeypatch.delenv("GRAFANA_SERVER", raising=False)
+    monkeypatch.setenv("GRAFANA_TOKEN", "grafana-token")
+
+    env = gcx_subprocess_env()
+
+    assert env["GRAFANA_SERVER"] == "https://pytorchci.grafana.net"
 
 
 @pytest.mark.parametrize(

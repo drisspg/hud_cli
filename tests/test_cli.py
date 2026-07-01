@@ -97,6 +97,7 @@ def test_gcx_login_uses_hud_minted_token(monkeypatch) -> None:
         return subprocess.CompletedProcess(["gcx"], 0, "logged in\n", "")
 
     monkeypatch.setattr(cli, "login_with_hud_token", fake_login)
+    monkeypatch.setattr(cli, "clickhouse_query", fake_clickhouse_query)
     monkeypatch.setattr(cli, "hostname_token_name", lambda: "test-host")
 
     result = runner.invoke(app, ["gcx", "login"])
@@ -104,6 +105,24 @@ def test_gcx_login_uses_hud_minted_token(monkeypatch) -> None:
     assert result.exit_code == 0
     assert captured["token_name"] == "test-host"
     assert "logged in" in result.output
+    assert "Verified HUD ClickHouse access" in result.output
+
+
+def test_gcx_login_reports_verification_failure(monkeypatch) -> None:
+    def fake_login(config, token_name):
+        return subprocess.CompletedProcess(["gcx"], 0, "logged in\n", "")
+
+    def fake_query(config, sql):
+        raise cli.GcxError("Grafana returned 401 Unauthorized for the gcx pytorchci context. Run `hud gcx login`.")
+
+    monkeypatch.setattr(cli, "login_with_hud_token", fake_login)
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, ["gcx", "login"])
+
+    assert result.exit_code == 1
+    assert "gcx login completed, but HUD ClickHouse verification failed" in result.output
+    assert "401 Unauthorized" in result.output
 
 
 def test_gcx_chq_outputs_rows(monkeypatch) -> None:

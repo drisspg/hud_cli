@@ -133,10 +133,10 @@ def login_with_hud_token(config: HudConfig, token_name: str) -> subprocess.Compl
         config,
         [
             "login",
-            "--yes",
             "pytorchci",
             "--server",
             GRAFANA_SERVER,
+            "--yes",
             "--token",
             mint_gcx_token(config, token_name),
         ],
@@ -183,8 +183,25 @@ def clickhouse_query(config: HudConfig, sql: str) -> dict[str, Any]:
         ["api", "/api/ds/query", "-o", "json", "-d", json.dumps(payload)],
     )
     if result.returncode != 0:
-        raise GcxError(result.stderr.strip() or result.stdout.strip() or "gcx ClickHouse query failed")
+        raise GcxError(gcx_failure_message(result, "gcx ClickHouse query failed"))
     return json.loads(result.stdout)
+
+
+def gcx_failure_message(result: subprocess.CompletedProcess[str], fallback: str) -> str:
+    output = result.stderr.strip() or result.stdout.strip()
+    if "HTTP 401" in output or "Unauthorized" in output:
+        return (
+            "Grafana returned 401 Unauthorized for the gcx pytorchci context. "
+            "Refresh it with `hud gcx login`; this uses `gh auth token` to mint a HUD Grafana token and runs "
+            f"`gcx login pytorchci --server {GRAFANA_SERVER} --yes --token ...` without printing the token. "
+            "If login still fails, check `gh auth status` and PyTorch HUD access."
+        )
+    if "HTTP 403" in output or "Forbidden" in output:
+        return (
+            "Grafana returned 403 Forbidden for the gcx pytorchci context. "
+            "Run `hud gcx login` to refresh the HUD-minted Grafana token; if it persists, confirm your GitHub account has PyTorch HUD access."
+        )
+    return output or fallback
 
 
 def validate_read_only_clickhouse_sql(sql: str) -> None:
@@ -278,14 +295,22 @@ def run_gcx(config: HudConfig, args: list[str]) -> subprocess.CompletedProcess[s
         raise GcxError(
             "gcx is not available. Run `hud gcx install`, or set GCX_PATH if gcx is installed outside PATH."
         )
-    env = {**os.environ, "GRAFANA_SERVER": GRAFANA_SERVER}
     return subprocess.run(
         [status.path, *args],
         text=True,
         capture_output=True,
         check=False,
-        env=env,
+        env=gcx_subprocess_env(),
     )
+
+
+def gcx_subprocess_env() -> dict[str, str]:
+    env = dict(os.environ)
+    if env.get("GRAFANA_TOKEN"):
+        env.setdefault("GRAFANA_SERVER", GRAFANA_SERVER)
+    else:
+        env.pop("GRAFANA_SERVER", None)
+    return env
 
 
 def validate_gcx_passthrough_args(args: list[str]) -> None:

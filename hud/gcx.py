@@ -5,7 +5,6 @@ import io
 import json
 import os
 import platform
-import re
 import subprocess
 import tarfile
 import tempfile
@@ -18,6 +17,7 @@ from curl_cffi import requests
 from platformdirs import user_config_dir, user_data_dir
 
 from hud.auth import HudConfig
+from hud.sql import lex_sql, with_settings
 
 GRAFANA_SERVER = "https://pytorchci.grafana.net"
 CLICKHOUSE_DATASOURCE_UID = "ceczcsck1b20wb"
@@ -49,7 +49,6 @@ BLOCKED_CLICKHOUSE_KEYWORDS = {
     "USE",
     "WATCH",
 }
-SQL_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 class GcxError(RuntimeError):
@@ -187,8 +186,11 @@ def mint_gcx_token(config: HudConfig, token_name: str) -> str:
     return token
 
 
-def clickhouse_query(config: HudConfig, sql: str) -> dict[str, Any]:
+def clickhouse_query(
+    config: HudConfig, sql: str, settings: dict[str, int] | None = None
+) -> dict[str, Any]:
     validate_read_only_clickhouse_sql(sql)
+    sql = with_settings(sql, settings or {})
     payload = {
         "queries": [
             {
@@ -226,10 +228,20 @@ def gcx_failure_message(result: subprocess.CompletedProcess[str], fallback: str)
             "Grafana returned 403 Forbidden for the gcx pytorchci context. "
             "Run `hud gcx login` to refresh the HUD-minted Grafana token; if it persists, confirm your GitHub account has PyTorch HUD access."
         )
-    return output or fallback
+    return datasource_error(output) or output or fallback
 
 
-def validate_read_only_clickhouse_sql(sql: str) -> None:
+def datasource_error(output: str) -> str | None:
+    """Extract the ClickHouse message from gcx's nested API error JSON, if present."""
+    try:
+        details = json.loads(output[output.index("{") :])["error"]["details"]
+        response = json.loads(details[details.index("{") :])
+        return response["results"]["A"]["error"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def validate_read_only_clickhouse_sql(sql: str) -> list[str]:
     tokens, has_statement_separator = clickhouse_sql_tokens(sql)
     if not tokens:
         raise GcxError("ClickHouse SQL cannot be empty")
@@ -239,69 +251,17 @@ def validate_read_only_clickhouse_sql(sql: str) -> None:
         raise GcxError("ClickHouse SQL must start with SELECT, WITH, SHOW, DESCRIBE, or EXPLAIN")
     if blocked := sorted(set(tokens) & BLOCKED_CLICKHOUSE_KEYWORDS):
         raise GcxError(f"ClickHouse SQL contains blocked write/admin keyword: {', '.join(blocked)}")
+    return tokens
 
 
 def clickhouse_sql_tokens(sql: str) -> tuple[list[str], bool]:
-    tokens = []
-    has_statement_separator = False
-    after_statement_end = False
-    index = 0
-    while index < len(sql):
-        char = sql[index]
-        next_char = sql[index + 1] if index + 1 < len(sql) else ""
-        if char in {"'", '"', "`"}:
-            index = skip_quoted_sql(sql, index, char)
-            continue
-        if char == "-" and next_char == "-":
-            index = skip_line_comment(sql, index + 2)
-            continue
-        if char == "#":
-            index = skip_line_comment(sql, index + 1)
-            continue
-        if char == "/" and next_char == "*":
-            index = skip_block_comment(sql, index + 2)
-            continue
-        if char == ";":
-            after_statement_end = bool(tokens)
-            index += 1
-            continue
-        match = SQL_TOKEN_RE.match(sql, index)
-        if match:
-            has_statement_separator = has_statement_separator or after_statement_end
-            tokens.append(match.group(0).upper())
-            index = match.end()
-            continue
-        index += 1
-    return tokens, has_statement_separator
-
-
-def skip_quoted_sql(sql: str, index: int, quote_char: str) -> int:
-    index += 1
-    while index < len(sql):
-        if sql[index] == "\\":
-            index += 2
-            continue
-        if sql[index] == quote_char:
-            if quote_char in {"'", '"'} and index + 1 < len(sql) and sql[index + 1] == quote_char:
-                index += 2
-                continue
-            return index + 1
-        index += 1
-    return index
-
-
-def skip_line_comment(sql: str, index: int) -> int:
-    while index < len(sql) and sql[index] not in {"\n", "\r"}:
-        index += 1
-    return index
-
-
-def skip_block_comment(sql: str, index: int) -> int:
-    while index + 1 < len(sql):
-        if sql[index] == "*" and sql[index + 1] == "/":
-            return index + 2
-        index += 1
-    return index
+    """Return upper-cased code words and whether code follows a statement-ending semicolon."""
+    tokens = lex_sql(sql)
+    first_separator = next((index for index, token in enumerate(tokens) if token.text == ";"), None)
+    has_statement_separator = first_separator is not None and any(
+        token.text != ";" for token in tokens[first_separator + 1 :]
+    )
+    return [token.text for token in tokens if token.is_word], has_statement_separator
 
 
 def rows_from_gcx_response(data: dict[str, Any]) -> list[dict[str, Any]]:

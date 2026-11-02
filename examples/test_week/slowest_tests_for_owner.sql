@@ -1,9 +1,11 @@
--- Slowest test cases for one owner module on main (pull + trunk), last day.
--- Change the owner literal; ci.owners stores labels without the "module: " prefix.
+-- Slowest test cases for one owner module on main (pull + trunk) over the last {days} days.
+-- ci.owners stores labels without the "module: " prefix (owner=nn, not "module: nn").
+-- @param days=1
+-- @param owner=nn
 WITH main_jobs AS (
     SELECT id
     FROM default.workflow_job
-    WHERE completed_at > now() - INTERVAL 1 DAY
+    WHERE completed_at > now() - INTERVAL {days:UInt32} DAY
       AND repository_full_name = 'pytorch/pytorch'
       AND head_branch = 'main'
       AND workflow_name IN ('pull', 'trunk')
@@ -11,7 +13,7 @@ WITH main_jobs AS (
 owned_files AS (
     SELECT file
     FROM ci.owners FINAL
-    WHERE repo = 'pytorch/pytorch' AND has(owners, 'nn')
+    WHERE repo = 'pytorch/pytorch' AND has(owners, {owner:String})
 )
 SELECT
     t.file,
@@ -22,7 +24,7 @@ SELECT
     count() AS attempts
 FROM ci.runs AS r
 INNER JOIN ci.tests AS t FINAL ON r.tests_id = t.id
-WHERE r.started_at > now() - INTERVAL 1 DAY
+WHERE r.started_at > now() - INTERVAL {days:UInt32} DAY
   AND r.github_workflow_job_id IN (SELECT id FROM main_jobs)
   AND t.repo = 'pytorch/pytorch'
   AND t.file IN (SELECT file FROM owned_files)

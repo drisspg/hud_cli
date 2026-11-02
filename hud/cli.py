@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import socket
 import sys
@@ -33,12 +35,14 @@ from hud.logs import (
     s3_log_url,
     search_file,
 )
+from hud.sql import SqlParamError, parse_params, render_sql, sql_string
 from hud.tests_api import (
     TestsApiError,
     openapi_endpoints,
     openapi_parameters,
     parse_query_params,
     tests_api_get,
+    tests_api_get_pages,
 )
 
 app = typer.Typer(help="PyTorch CI data CLI backed by Grafana gcx.", no_args_is_help=True)
@@ -339,18 +343,39 @@ def gcx_sample(
 def gcx_chq(
     sql: str | None = typer.Argument(None, help="ClickHouse SQL to run through Grafana's PyTorch datasource. Use '-' to read stdin."),
     sql_file: Annotated[Path | None, typer.Option("--file", "-f", help="Path to a .sql file to run.")] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", "-p", help="Fill a {name:Type} placeholder as name=value; repeatable."),
+    ] = None,
+    max_seconds: int = typer.Option(60, "--max-seconds", min=1, max=300, help="ClickHouse max_execution_time for SELECT/WITH queries."),
     output_json: bool = typer.Option(False, "--json", help="Print parsed rows as JSON."),
+    output_csv: bool = typer.Option(False, "--csv", help="Print parsed rows as CSV."),
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Write rows to this file (CSV with --csv, else JSON).")] = None,
     raw: bool = typer.Option(False, "--raw", help="Print raw Grafana datasource JSON."),
 ) -> None:
+    if output_json and output_csv:
+        raise typer.BadParameter("use --json or --csv, not both")
     try:
-        data = clickhouse_query(load_config(), read_sql(sql, sql_file))
-    except (GcxError, json.JSONDecodeError, KeyError) as error:
+        query = render_sql(read_sql(sql, sql_file), parse_params(param or []))
+        data = clickhouse_query(load_config(), query, {"max_execution_time": max_seconds})
+    except (GcxError, SqlParamError, json.JSONDecodeError, KeyError) as error:
         console.print(f"[red]error:[/red] {error}")
         raise typer.Exit(1) from error
+    if raw and output:
+        output.write_text(json.dumps(data, indent=2, default=str))
+        console.print(f"Wrote raw response to {output}")
+        return
     if raw:
         print_json(data)
         return
     rows = rows_from_gcx_response(data)
+    if output:
+        output.write_text(rows_to_csv(rows) if output_csv else json.dumps(rows, indent=2, default=str))
+        console.print(f"Wrote {len(rows)} rows to {output}")
+        return
+    if output_csv:
+        sys.stdout.write(rows_to_csv(rows))
+        return
     if output_json:
         print_json(rows)
         return
@@ -384,10 +409,13 @@ def tests_api(
         list[str] | None,
         typer.Option("--query", "-q", help="Query parameter as key=value; repeat for multiple or repeated keys."),
     ] = None,
+    all_pages: bool = typer.Option(False, "--all", help="Follow pagination cursors and concatenate list fields."),
+    max_pages: int = typer.Option(10, "--max-pages", min=1, max=100, help="Page cap for --all."),
 ) -> None:
     """GET a Tests API endpoint and print its JSON response."""
     try:
-        data = tests_api_get(load_config(), path, parse_query_params(query or []))
+        config, params = load_config(), parse_query_params(query or [])
+        data = tests_api_get_pages(config, path, params, max_pages) if all_pages else tests_api_get(config, path, params)
     except TestsApiError as error:
         console.print(f"[red]error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -447,10 +475,6 @@ def quote_identifier(value: str) -> str:
     return f"`{value.replace('`', '``')}`"
 
 
-def sql_string(value: str) -> str:
-    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
-
-
 def read_sql(sql: str | None, sql_file: Path | None) -> str:
     if sql and sql_file:
         raise typer.BadParameter("use SQL argument or --file, not both")
@@ -479,6 +503,16 @@ def resolve_log_path(path: Path | None, job_id: int | None, output: Path | None)
 
 def print_json(data: Any) -> None:
     console.print_json(json.dumps(data, indent=2, sort_keys=True, default=str))
+
+
+def rows_to_csv(rows: list[dict[str, Any]]) -> str:
+    buffer = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(buffer, fieldnames=list(rows[0]))
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: json.dumps(value) if isinstance(value, (list, dict)) else value for key, value in row.items()})
+    return buffer.getvalue()
 
 
 def render_rows(rows: list[dict[str, Any]]) -> None:

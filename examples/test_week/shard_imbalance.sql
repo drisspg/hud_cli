@@ -1,5 +1,10 @@
 -- Shard imbalance for test jobs on main: the slowest shard sets time-to-signal.
 -- Groups "test (config, shard, num_shards, runner)" jobs by workflow run and config.
+-- Window: successful jobs completed in the last {days} days; {min_runs} filters noisy configs.
+-- @param days=1
+-- @param repo=pytorch/pytorch
+-- @param branch=main
+-- @param min_runs=3
 WITH shards AS (
     SELECT
         run_id,
@@ -8,9 +13,9 @@ WITH shards AS (
         toUInt32OrZero(extract(name, ', \\d+, (\\d+), ')) AS num_shards,
         dateDiff('second', started_at, completed_at) / 60 AS minutes
     FROM default.workflow_job
-    WHERE completed_at > now() - INTERVAL 1 DAY
-      AND repository_full_name = 'pytorch/pytorch'
-      AND head_branch = 'main'
+    WHERE completed_at > now() - INTERVAL {days:UInt32} DAY
+      AND repository_full_name = {repo:String}
+      AND head_branch = {branch:String}
       AND workflow_name IN ('pull', 'trunk')
       AND conclusion = 'success'
       AND match(name, ' / test \\(.*, \\d+, \\d+, ')
@@ -33,6 +38,6 @@ SELECT
     count() AS runs
 FROM per_run
 GROUP BY workflow_name, job_config
-HAVING runs >= 3
+HAVING runs >= {min_runs:UInt32}
 ORDER BY p50_excess_min DESC
 LIMIT 30

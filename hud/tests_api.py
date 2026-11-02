@@ -65,6 +65,35 @@ def tests_api_get(
         raise TestsApiError(f"HUD Tests API returned non-JSON content: {response.text[:200]}") from error
 
 
+def tests_api_get_pages(
+    config: HudConfig, path: str, params: list[tuple[str, str]], max_pages: int
+) -> dict[str, Any]:
+    """Follow pagination.next cursors, concatenating top-level list fields across pages.
+
+    Non-list fields (counts, hud_url, timings) describe the first page.
+    """
+    merged = tests_api_get(config, path, params)
+    if not isinstance(merged, dict):
+        raise TestsApiError("--all needs an object response with pagination")
+    cursor_params = [(key, value) for key, value in params if key != "cursor"]
+    pages = 1
+    while pages < max_pages and (cursor := next_cursor(merged)):
+        page = tests_api_get(config, path, [*cursor_params, ("cursor", cursor)])
+        for key, value in page.items():
+            if isinstance(value, list) and isinstance(merged.get(key), list):
+                merged[key].extend(value)
+        merged["pagination"] = page.get("pagination")
+        pages += 1
+    merged["pages_fetched"] = pages
+    merged["truncated"] = next_cursor(merged) is not None
+    return merged
+
+
+def next_cursor(response: dict[str, Any]) -> str | None:
+    next_page = (response.get("pagination") or {}).get("next") or {}
+    return next_page.get("cursor")
+
+
 def openapi_endpoints(schema: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {

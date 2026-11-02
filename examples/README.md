@@ -4,16 +4,7 @@ These examples intentionally keep `hud` as a primitive data CLI. Fetch bounded J
 
 ## Test Week queries
 
-[`test_week/`](test_week/) holds validated, bounded SQL for CI speedup work. Each file documents its window and definition at the top:
-
-```bash
-uv run hud gcx chq --file examples/test_week/owner_test_time.sql --json         # test hours per owner module on main
-uv run hud gcx chq --file examples/test_week/slowest_tests_for_owner.sql --json # edit the owner literal
-uv run hud gcx chq --file examples/test_week/shard_imbalance.sql --json         # slowest vs mean shard
-uv run hud gcx chq --file examples/test_week/trunk_ttgs.sql --json
-uv run hud gcx chq --file examples/test_week/pull_ttrs.sql --json
-uv run hud gcx chq --file examples/test_week/periodic_strict_health.sql --json  # @periodic workflow
-```
+[`test_week/`](test_week/README.md) holds validated, parameterized SQL for CI speedup work (signal metrics, owner test time, cost, `@periodic` candidates). See its README for the catalog and data caveats.
 
 ## Slowest test files Plotly report with test counts
 

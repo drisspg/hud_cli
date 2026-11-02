@@ -82,7 +82,7 @@ hud tests api /api/tests/test/TEST_ID/runs -q group_by=commit -q window=3d
 hud tests api /api/tests/commit/SHA -q repo=pytorch/pytorch -q outcome=failed
 ```
 
-Requests go to HUD's `/api/authed/...` routes with your GitHub token; the unprefixed routes answer CLI callers with a bot challenge. Repeat `-q` for multi-valued parameters and pass `pagination.next.cursor` back as `-q cursor=...`.
+Requests go to HUD's `/api/authed/...` routes with your GitHub token; the unprefixed routes answer CLI callers with a bot challenge. Repeat `-q` for multi-valued parameters; add `--all --max-pages N` to follow pagination cursors and concatenate results.
 
 ## Grafana ClickHouse
 
@@ -120,6 +120,13 @@ Use JSON for agents:
 
 ```bash
 hud gcx chq "SHOW TABLES FROM default" --json
+```
+
+SQL files can declare typed placeholders such as `{owner:String}` or `{days:UInt32}`, with defaults in `-- @param name=value` comment lines; fill them with `-p name=value`. SELECT/WITH queries run with a 60s `max_execution_time` (`--max-seconds` to change). Use `--csv` and/or `-o FILE` to export rows.
+
+```bash
+hud gcx chq --file examples/test_week/slowest_tests_for_owner.sql -p owner=nn -p days=1 --json
+hud gcx chq --file examples/test_week/owner_test_time.sql --csv -o /tmp/owner-time.csv
 ```
 
 Keep larger queries in files or pipe them through stdin:
@@ -180,7 +187,7 @@ Query guardrails:
 - Treat snapshot/event tables such as `pull_request` carefully; use `countDistinct(number)` for PR counts.
 - Answer test questions from the `ci` database (or `hud tests`), not the legacy `tests` database.
 
-Validated Test Week queries (owner test time, slowest tests per owner, shard imbalance, trunk TTGS, pull TTRS, `@periodic` health) live in [`examples/test_week/`](examples/test_week/).
+Validated, parameterized Test Week queries (TTGS/TTRS, critical path, shard imbalance, owner test time, OpInfo hot ops, duplicate coverage, skip waste, runner cost, `@periodic` candidates, disabled-test cost) are cataloged in [`examples/test_week/README.md`](examples/test_week/README.md).
 
 Pass through to `gcx` when you want any Grafana-backed datasource directly:
 

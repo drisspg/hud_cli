@@ -25,7 +25,7 @@ def fake_clickhouse_response():
     }
 
 
-def fake_clickhouse_query(config, sql):
+def fake_clickhouse_query(config, sql, settings=None):
     return fake_clickhouse_response()
 
 
@@ -112,7 +112,7 @@ def test_gcx_login_reports_verification_failure(monkeypatch) -> None:
     def fake_login(config, token_name):
         return subprocess.CompletedProcess(["gcx"], 0, "logged in\n", "")
 
-    def fake_query(config, sql):
+    def fake_query(config, sql, settings=None):
         raise cli.GcxError("Grafana returned 401 Unauthorized for the gcx pytorchci context. Run `hud gcx login`.")
 
     monkeypatch.setattr(cli, "login_with_hud_token", fake_login)
@@ -138,7 +138,7 @@ def test_gcx_chq_outputs_rows(monkeypatch) -> None:
 def test_gcx_chq_reads_sql_file(monkeypatch, tmp_path: Path) -> None:
     captured = {}
 
-    def fake_query(config, sql):
+    def fake_query(config, sql, settings=None):
         captured["sql"] = sql
         return fake_clickhouse_response()
 
@@ -155,7 +155,7 @@ def test_gcx_chq_reads_sql_file(monkeypatch, tmp_path: Path) -> None:
 def test_gcx_chq_reads_stdin(monkeypatch) -> None:
     captured = {}
 
-    def fake_query(config, sql):
+    def fake_query(config, sql, settings=None):
         captured["sql"] = sql
         return fake_clickhouse_response()
 
@@ -177,7 +177,7 @@ def test_gcx_chq_reads_stdin(monkeypatch) -> None:
 def test_gcx_discovery_commands(monkeypatch, args, expected_sql) -> None:
     captured = {}
 
-    def fake_query(config, sql):
+    def fake_query(config, sql, settings=None):
         captured["sql"] = sql
         return fake_clickhouse_response()
 
@@ -200,7 +200,7 @@ def test_gcx_discovery_commands(monkeypatch, args, expected_sql) -> None:
 def test_gcx_discovery_spans_databases_by_default(monkeypatch, args, expected_filter) -> None:
     captured = {}
 
-    def fake_query(config, sql):
+    def fake_query(config, sql, settings=None):
         captured["sql"] = sql
         return fake_clickhouse_response()
 
@@ -215,7 +215,7 @@ def test_gcx_discovery_spans_databases_by_default(monkeypatch, args, expected_fi
 def test_gcx_columns_search(monkeypatch) -> None:
     captured = {}
 
-    def fake_query(config, sql):
+    def fake_query(config, sql, settings=None):
         captured["sql"] = sql
         return fake_clickhouse_response()
 
@@ -393,3 +393,78 @@ def test_log_sections(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert '"section_count": 1' in result.output
     assert "interesting" in result.output
+
+
+def test_gcx_chq_renders_params_and_sets_timeout(monkeypatch, tmp_path: Path) -> None:
+    captured = {}
+
+    def fake_query(config, sql, settings=None):
+        captured["sql"] = sql
+        captured["settings"] = settings
+        return fake_clickhouse_response()
+
+    sql_file = tmp_path / "query.sql"
+    sql_file.write_text("-- @param days=1\nSELECT {owner:String}, {days:UInt32}\n")
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, ["gcx", "chq", "-f", str(sql_file), "-p", "owner=nn", "--max-seconds", "30", "--json"])
+
+    assert result.exit_code == 0
+    assert "SELECT 'nn', 1" in captured["sql"]
+    assert captured["settings"] == {"max_execution_time": 30}
+
+
+def test_gcx_chq_reports_missing_param(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "clickhouse_query", fake_clickhouse_query)
+
+    result = runner.invoke(app, ["gcx", "chq", "SELECT {owner:String}"])
+
+    assert result.exit_code == 1
+    assert "missing SQL parameters: owner" in result.output
+
+
+def test_gcx_chq_csv_and_output_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(cli, "clickhouse_query", fake_clickhouse_query)
+    out = tmp_path / "rows.csv"
+
+    printed = runner.invoke(app, ["gcx", "chq", "SELECT 1", "--csv"])
+    written = runner.invoke(app, ["gcx", "chq", "SELECT 1", "--csv", "-o", str(out)])
+
+    assert printed.output.splitlines() == ["conclusion,n", "success,12", "failure,3"]
+    assert written.exit_code == 0
+    assert out.read_text().splitlines()[0] == "conclusion,n"
+
+
+def test_tests_api_all_reports_truncation_at_page_cap(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "hud.tests_api.tests_api_get",
+        lambda config, path, params: {"tests": [1], "pagination": {"next": {"cursor": "again"}}},
+    )
+
+    result = runner.invoke(app, ["tests", "api", "/api/tests", "--all", "--max-pages", "2"])
+
+    assert '"pages_fetched": 2' in result.output
+    assert '"truncated": true' in result.output
+
+
+def test_tests_api_all_follows_cursors(monkeypatch) -> None:
+    pages = {
+        None: {"tests": [1, 2], "pagination": {"next": {"cursor": "c2"}}},
+        "c2": {"tests": [3], "pagination": {"next": None}},
+    }
+    calls = []
+
+    def fake_get(config, path, params):
+        cursor = dict(params).get("cursor")
+        calls.append(params)
+        return {key: list(value) if isinstance(value, list) else value for key, value in pages[cursor].items()}
+
+    monkeypatch.setattr("hud.tests_api.tests_api_get", fake_get)
+
+    result = runner.invoke(app, ["tests", "api", "/api/tests", "-q", "repo=pytorch/pytorch", "--all"])
+
+    assert result.exit_code == 0
+    assert '"pages_fetched": 2' in result.output
+    assert '"truncated": false' in result.output
+    assert calls[1] == [("repo", "pytorch/pytorch"), ("cursor", "c2")]
+    assert result.output.count("\n    3") == 1

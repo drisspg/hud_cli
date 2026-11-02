@@ -1,6 +1,10 @@
 -- Trunk time to green signal: main push to the last pull/trunk job finishing,
 -- for commits whose pull and trunk jobs all succeeded on the first attempt. Minutes.
 -- Commits that went green only after a rerun are excluded.
+-- Window: pushes from {days} days ago up to 1 day ago (lets slow commits finish).
+-- @param days=7
+-- @param repo=pytorch/pytorch
+-- @param branch=main
 WITH commits AS (
     SELECT
         r.head_sha,
@@ -10,11 +14,11 @@ WITH commits AS (
         uniqExact(r.name) AS workflows
     FROM default.workflow_run AS r
     INNER JOIN default.workflow_job AS j ON j.run_id = r.id
-    WHERE r.created_at > now() - INTERVAL 7 DAY
+    WHERE r.created_at > now() - INTERVAL {days:UInt32} DAY
       AND r.created_at < now() - INTERVAL 1 DAY
-      AND j.completed_at > now() - INTERVAL 8 DAY
-      AND r.repository.full_name = 'pytorch/pytorch'
-      AND r.head_branch = 'main'
+      AND j.completed_at > now() - INTERVAL ({days:UInt32} + 1) DAY
+      AND r.repository.full_name = {repo:String}
+      AND r.head_branch = {branch:String}
       AND r.event = 'push'
       AND r.name IN ('pull', 'trunk')
       AND j.run_attempt = 1

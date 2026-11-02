@@ -34,7 +34,7 @@ hud tests api /api/tests/commit/SHA -q repo=pytorch/pytorch -q outcome=failed
 ```
 
 - Repeat `-q key=value` for multi-valued parameters.
-- Pass `pagination.next.cursor` back as `-q cursor=...` to page.
+- Add `--all --max-pages N` (default 10) to follow cursors and concatenate list fields; output includes `pages_fetched`.
 - `/api/tests` defaults to `ran_on=main` and a 12h window; set `window` explicitly (3h, 12h, 1d, 3d, 7d, 14d).
 - HUD page paths in `hud tests schema` (`kind=page`) are for humans; link them, never fetch them.
 
@@ -50,8 +50,13 @@ hud gcx columns owner --json       # search names/comments across databases
 hud gcx sample ci.tests --limit 5 --json
 hud gcx chq "SELECT 1" --json
 hud gcx chq --file query.sql --json
+hud gcx chq --file query.sql -p owner=nn -p days=3 --json   # fill {owner:String}, {days:UInt32}
+hud gcx chq --file query.sql --csv -o /tmp/rows.csv          # CSV/JSON to a file for plotting
+hud gcx chq --file heavy.sql --max-seconds 180 --json        # default ClickHouse timeout is 60s
 cat query.sql | hud gcx chq - --json
 ```
+
+SQL files use ClickHouse-style typed placeholders `{name:Type}` (String, Int*/UInt*, Float*, Date), rendered client-side with safe quoting. Declare defaults as comment lines `-- @param name=value`; unknown `-p` names and missing values are errors. Timeouts surface as the ClickHouse error message (code 159): narrow the window before raising `--max-seconds`.
 
 ### Datasets
 
@@ -60,7 +65,8 @@ cat query.sql | hud gcx chq - --json
   - `ci.tests`, `ci.environments`, `ci.env_vars`, `ci.owners`: read with `FINAL`, including in joins, or rows duplicate.
   - `ci.owners`: `(repo, file) -> owners Array(String)`, labels without the `module: ` prefix.
   - `ci.health`: precomputed per test/environment health by `ran_on` and `window`.
-- `default` — GitHub webhook data (`workflow_job`, `workflow_run`, `push`, `pull_request`, ...) plus other CI tables. Filter `repository_full_name = 'pytorch/pytorch'` on `workflow_job`.
+- `default` — GitHub webhook data (`workflow_job`, `workflow_run`, `push`, `pull_request`, ...) plus other CI tables. Filter `repository_full_name = 'pytorch/pytorch'` on `workflow_job`. Avoid `workflow_job.workflow_event` (restricted dictionary); use `workflow_run.event`.
+- `misc` — `runner_cost` (daily $ per runner label; read with `FINAL`), `autorevert_events_v2`, `disabled_tests_historical`, queue/utilization tables.
 - `tests` (`all_test_runs` and friends) — legacy; do not use.
 - More query patterns: HUD's saved queries in `pytorch/test-infra` at `torchci/clickhouse_queries/<name>/query.sql`, schemas with column docs in `clickhouse_db_schema/`.
 
@@ -73,16 +79,7 @@ cat query.sql | hud gcx chq - --json
 
 ### Test Week recipes
 
-Validated SQL lives in `examples/test_week/` (run with `hud gcx chq --file ... --json`):
-
-| File | Answers |
-| --- | --- |
-| `owner_test_time.sql` | Test hours per owner module on main pull + trunk (before/after comparisons) |
-| `slowest_tests_for_owner.sql` | Slowest test cases for one owner module |
-| `shard_imbalance.sql` | Slowest shard vs mean shard per job config |
-| `trunk_ttgs.sql` | Trunk time to green signal (p50/p90/mean) |
-| `pull_ttrs.sql` | Pull time to red signal (p50/p90/mean/stddev) |
-| `periodic_strict_health.sql` | Job failures in `periodic-strict`, the `@periodic` workflow |
+`examples/test_week/README.md` catalogs validated, parameterized SQL: TTGS/TTRS, trunk critical path, shard imbalance, job time breakdown, owner test time (current, compare, per commit), slowest tests per owner, OpInfo hot ops, duplicate coverage, skip waste, runner cost (per job and per owner), `@periodic` candidates and health, autorevert activity, and disabled-test cost. Start there before writing new SQL, and run them with `hud gcx chq --file ... -p name=value --json`.
 
 ## Other Grafana datasources
 

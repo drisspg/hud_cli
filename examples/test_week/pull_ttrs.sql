@@ -1,6 +1,10 @@
 -- Pull time to red signal: PR workflow start to the first failed job, first attempts only
 -- (reruns would otherwise stretch the tail). Minutes. Expect a skewed distribution:
 -- compare p50/p90 rather than the mean.
+-- Window: PR workflow runs created in the last {days} days; {workflow} is the workflow name.
+-- @param days=7
+-- @param repo=pytorch/pytorch
+-- @param workflow=pull
 WITH failed_runs AS (
     SELECT
         r.id,
@@ -8,11 +12,11 @@ WITH failed_runs AS (
         minIf(j.completed_at, j.conclusion = 'failure') AS first_red_at
     FROM default.workflow_run AS r
     INNER JOIN default.workflow_job AS j ON j.run_id = r.id
-    WHERE r.created_at > now() - INTERVAL 7 DAY
-      AND j.completed_at > now() - INTERVAL 8 DAY
-      AND r.repository.full_name = 'pytorch/pytorch'
+    WHERE r.created_at > now() - INTERVAL {days:UInt32} DAY
+      AND j.completed_at > now() - INTERVAL ({days:UInt32} + 1) DAY
+      AND r.repository.full_name = {repo:String}
       AND r.event = 'pull_request'
-      AND r.name = 'pull'
+      AND r.name = {workflow:String}
       AND j.run_attempt = 1
     GROUP BY r.id
     HAVING countIf(j.conclusion = 'failure') > 0

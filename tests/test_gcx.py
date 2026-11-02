@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import subprocess
 import tarfile
 from pathlib import Path
@@ -134,6 +135,14 @@ def test_gcx_failure_message_explains_unauthorized() -> None:
     assert "hud gcx login" in message
     assert "gh auth status" in message
     assert "GRAFANA_TOKEN" in message
+
+
+def test_gcx_failure_message_extracts_clickhouse_error() -> None:
+    nested = '{"results":{"A":{"error":"code: 159, message: Timeout exceeded"}}}'
+    output = json.dumps({"error": {"summary": "API error", "details": f"HTTP 400: {nested}"}})
+    result = subprocess.CompletedProcess(["gcx"], 1, "", output)
+
+    assert gcx_failure_message(result, "fallback") == "code: 159, message: Timeout exceeded"
 
 
 def test_gcx_subprocess_env_removes_server_without_token(monkeypatch) -> None:

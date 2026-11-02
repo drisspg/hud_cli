@@ -64,6 +64,8 @@ def test_parse_params_rejects_repeated_names() -> None:
         ("SELECT 1;\n", "SELECT 1\nSETTINGS max_execution_time = 5"),
         ("SELECT 1 -- note", "SELECT 1\nSETTINGS max_execution_time = 5"),
         ("SELECT 1;\n-- end", "SELECT 1\nSETTINGS max_execution_time = 5"),
+        ("SELECT 1 WHERE x = 'a;b' -- c", "SELECT 1 WHERE x = 'a;b'\nSETTINGS max_execution_time = 5"),
+        ("SELECT `col`", "SELECT `col`\nSETTINGS max_execution_time = 5"),
         ("SELECT format('{}', 1)", "SELECT format('{}', 1)\nSETTINGS max_execution_time = 5"),
         ("SELECT * FROM (SELECT 1 SETTINGS max_threads = 1)", "SELECT * FROM (SELECT 1 SETTINGS max_threads = 1)\nSETTINGS max_execution_time = 5"),
         ("SELECT 1 SETTINGS max_threads = 1", "SELECT 1 SETTINGS max_threads = 1"),

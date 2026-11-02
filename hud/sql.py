@@ -17,7 +17,7 @@ class SqlParamError(ValueError):
 
 @dataclass(frozen=True)
 class SqlToken:
-    """A code token outside string literals and comments."""
+    """A code token: a word, a quoted literal/identifier, or a single symbol (never a comment)."""
 
     text: str
     start: int
@@ -30,7 +30,7 @@ class SqlToken:
 
 
 def lex_sql(sql: str) -> list[SqlToken]:
-    """Split SQL into words and single-character symbols, skipping quotes and comments."""
+    """Split SQL into words, quoted literals, and single-character symbols, skipping comments."""
     tokens = []
     depth = 0
     index = 0
@@ -38,7 +38,9 @@ def lex_sql(sql: str) -> list[SqlToken]:
         char = sql[index]
         next_char = sql[index + 1] if index + 1 < len(sql) else ""
         if char in {"'", '"', "`"}:
-            index = skip_quoted_sql(sql, index, char)
+            end = skip_quoted_sql(sql, index, char)
+            tokens.append(SqlToken(sql[index:end], index, end, depth))
+            index = end
         elif char == "-" and next_char == "-" or char == "#":
             index = skip_line_comment(sql, index)
         elif char == "/" and next_char == "*":

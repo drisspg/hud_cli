@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from curl_cffi import requests
 from platformdirs import user_cache_dir
 from rich.console import Console
 from rich.table import Table
@@ -35,6 +36,7 @@ from hud.logs import (
     s3_log_url,
     search_file,
 )
+from hud.sources import fetch_repo_files
 from hud.sql import SqlParamError, parse_params, render_sql, sql_string
 from hud.tests_api import (
     TestsApiError,
@@ -43,6 +45,20 @@ from hud.tests_api import (
     parse_query_params,
     tests_api_get,
     tests_api_get_pages,
+)
+from hud.trace import (
+    JobTimeline,
+    LogSpans,
+    build_trace,
+    job_sql,
+    parse_log,
+    source_paths,
+    step_spans,
+    steps_sql,
+    summarize,
+    test_spans,
+    tests_sql,
+    with_links,
 )
 
 app = typer.Typer(help="PyTorch CI data CLI backed by Grafana gcx.", no_args_is_help=True)
@@ -82,6 +98,62 @@ def job(
         print_json(data)
         return
     console.print(data)
+
+
+@app.command("trace")
+def trace(
+    job_id: int = typer.Argument(..., help="GitHub Actions job id."),
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Trace path. Defaults to ./hud-job-JOB_ID.trace.json."),
+    ] = None,
+    use_log: bool = typer.Option(True, "--log/--no-log", help="Add spans parsed from the raw job log."),
+    links: bool = typer.Option(True, "--links/--no-links", help="Add GitHub source and step-log links; fetches test files at the job's commit."),
+    max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows from ci.runs."),
+    output_json: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
+) -> None:
+    """Write a Perfetto/Chrome trace of where one job spent its time: queue, steps, test files, test cases."""
+    config = load_config()
+    try:
+        jobs = rows_from_gcx_response(clickhouse_query(config, job_sql(job_id)))
+        if not jobs:
+            raise GcxError(f"job {job_id} not found in default.workflow_job")
+        job = jobs[0]
+        steps = step_spans(rows_from_gcx_response(clickhouse_query(config, steps_sql(job_id))))
+        test_rows = rows_from_gcx_response(
+            clickhouse_query(config, tests_sql(job_id, job["started_ms"], job["completed_ms"], max_tests), {"max_execution_time": 120})
+        )
+    except (GcxError, json.JSONDecodeError, KeyError) as error:
+        console.print(f"[red]error:[/red] {error}")
+        raise typer.Exit(1) from error
+    log = LogSpans()
+    if use_log:
+        try:
+            log = parse_log(download_log(job_id, default_log_path(job_id)).read_text(errors="replace"))
+        except (LogError, requests.RequestsError) as error:
+            err_console.print(f"[yellow]warning:[/yellow] {error}; trace has no log spans")
+    timeline = JobTimeline(job, steps, test_spans(test_rows[:max_tests]), log, len(test_rows) > max_tests)
+    if links:
+        sources = fetch_repo_files(job["head_sha"], source_paths(timeline))
+        timeline = with_links(timeline, sources.get)
+    path = output or Path(f"hud-job-{job_id}.trace.json")
+    path.write_text(json.dumps(build_trace(timeline), default=str))
+    summary = summarize(timeline) | {"trace": str(path.resolve()), "open_with": "https://ui.perfetto.dev"}
+    if output_json:
+        print_json(summary)
+        return
+    console.print(f"[bold]{summary['name']}[/bold]  {summary['html_url']}")
+    idle = summary["main_step_idle_sec"]
+    console.print(
+        f"queue {summary['queue_sec']}s, runtime {summary['runtime_sec']}s, "
+        f"{summary['main_step']} step {summary['main_step_sec']}s"
+        + (f" ({idle}s with no test case running)" if idle is not None else "")
+        + f", {summary['log_silent_outside_tests_sec']}s log-silent outside tests"
+    )
+    console.print(", ".join(f"{count} {name.replace('_', ' ')}" for name, count in summary["counts"].items()))
+    if timeline.truncated:
+        console.print(f"[yellow]test cases truncated at --max-tests {max_tests}[/yellow]")
+    console.print(f"Wrote {summary['trace']}; open it in {summary['open_with']} (drag and drop).")
 
 
 @log_app.command("url")

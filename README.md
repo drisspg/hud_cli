@@ -198,6 +198,23 @@ hud gcx run -- datasources prometheus query -d grafanacloud-prom 'sum by (cluste
 
 Pass datasource UIDs (`grafanacloud-prom`, `ceczcsck1b20wb`) to `-d`; gcx 1.x does not resolve display names. Run ClickHouse SQL through `hud gcx chq`; the passthrough rejects `gcx datasources clickhouse query` so read-only enforcement cannot be bypassed.
 
+## Job timelines in Perfetto
+
+```bash
+hud trace 123456789                       # writes ./hud-job-123456789.trace.json
+hud trace 123456789 --no-log --json -o /tmp/job.trace.json
+```
+
+Open the file at https://ui.perfetto.dev. Tracks, coarse to fine:
+
+- `job` (queued, running) and `steps` (GitHub steps, second resolution) from `default.workflow_job`.
+- From the raw log (100 ns timestamps per line): `actions (log)` (`##[group]Run ...` composite-action sections), `shell commands (log)` (`set -x` lines lasting at least 0.5s), `log silent outside tests >=30s` (log gaps outside test processes, test cases, and benchmark models, with the enclosing command in `during`; run_test.py buffers test output, so the log is always quiet while tests run), `test processes (log) N` (run_test.py `Running`/`Finished`, including import/collection), and `benchmark models (log) N` (dynamo benchmark `cuda train <model>` runs from the loading bar onward, with the `pass`/`1.23x`/`eager_fail_to_run` result and enclosing command).
+- From `ci.runs` (millisecond resolution): `test files` (one span per file report), `idle in main step` (Test/Build time with no test case running), and `test cases`.
+
+Clicked slices carry links that Perfetto renders as clickable: `source` (the test's `def` line, test file, script, or torchbench model at the job's commit) and `github_log` (the GitHub step log). Test-file contents come from raw.githubusercontent.com; pass `--no-links` to skip fetching.
+
+Concurrent spans go on numbered tracks. Benchmark and XPU jobs do not upload to `ci.runs`, so their finest level is the log.
+
 ## Raw CI logs
 
 ```bash
@@ -220,6 +237,7 @@ hud log sections /tmp/job.log --start 'Traceback' --end '^$' --json
 - `hud gcx tables`, `hud gcx describe`, `hud gcx columns`, and `hud gcx sample` discover available ClickHouse data.
 - `hud gcx chq` runs ClickHouse SQL through Grafana's PyTorch ClickHouse datasource.
 - `hud gcx run -- ...` shells out to `gcx` without printing credentials.
+- `hud trace` writes a Perfetto/Chrome trace of one job's queue, steps, test processes, test files, and test cases.
 - `hud job` prints direct raw S3 job log URLs.
 - `hud log ...` prints direct raw S3 log URLs, downloads logs, searches logs, extracts common patterns/test summaries, and filters bounded sections.
 - `hud auth doctor` / `hud doctor` explain how the CLI is authenticating.

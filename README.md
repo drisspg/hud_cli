@@ -1,8 +1,11 @@
 # hud_cli
 
-`hud` is a Typer CLI for PyTorch CI/CD data built around Grafana `gcx`, GitHub `gh`, and raw CI logs. The goal is to make questions about trunk health, failures, flaky tests, queues, time-to-land, and test history accessible to PyTorch engineers and coding agents.
+`hud` is a Typer CLI for PyTorch CI/CD data built around HUD's Tests API, Grafana `gcx`, GitHub `gh`, and raw CI logs. The goal is to make questions about trunk health, failures, flaky tests, queues, time-to-land, and test history accessible to PyTorch engineers and coding agents.
 
-The blessed data path is Grafana `gcx`: HUD mints a Grafana token from your GitHub auth, then `gcx` queries Grafana datasources such as ClickHouse.
+Two data paths, both authenticated by your `gh` session:
+
+- `hud tests` calls HUD's Tests API for per-test health, runs, owners, and HUD page links.
+- `hud gcx` mints a Grafana token through HUD, then queries Grafana datasources such as ClickHouse and Prometheus.
 
 ## Install
 
@@ -25,11 +28,12 @@ Primary setup:
 
 ```bash
 gh auth login --hostname github.com --git-protocol ssh --web
-hud gcx install
 hud gcx login
 ```
 
-`hud gcx install` downloads the managed Grafana `gcx` release binary if `gcx` is not already on PATH. `hud gcx login` calls `https://hud.pytorch.org/api/gcx-token?token_name=$(hostname)` with your `gh auth token`, then runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token ...` without printing the token.
+HUD manages a pinned `gcx` release (currently v1.7.1): the first gcx command downloads it, verifies its SHA-256 against the release checksums, and keeps it under the hud-cli data dir. Any `gcx` on PATH is ignored unless `GCX_PATH` points at it. `hud gcx install` pre-fetches the binary.
+
+`hud gcx login` calls `https://hud.pytorch.org/api/gcx-token?token_name=$(hostname)` with your `gh auth token`, then runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net` with the token in `GRAFANA_TOKEN`, so it never appears in process arguments. HUD points gcx at its own config file (`GCX_CONFIG`, under the hud-cli config dir) with `GCX_KEYCHAIN=off`, so it neither touches your personal gcx contexts nor needs an OS keychain. The stored token is a read-only Viewer token in a 0600 file.
 
 Optional environment variables:
 
@@ -66,24 +70,38 @@ hud gcx doctor --json
 hud gcx install
 ```
 
+## Tests API
+
+HUD's Tests API answers standard test questions (health, flakiness, owners, runs of a test, tests on a commit). Every response carries `hud_url` links to the matching HUD page.
+
+```bash
+hud tests schema                    # endpoints from /api/openapi.json
+hud tests schema /api/tests         # parameters for one endpoint
+hud tests api /api/tests -q repo=pytorch/pytorch -q owner=nn -q status=flaky -q window=7d -q limit=20
+hud tests api /api/tests/test/TEST_ID/runs -q group_by=commit -q window=3d
+hud tests api /api/tests/commit/SHA -q repo=pytorch/pytorch -q outcome=failed
+```
+
+Requests go to HUD's `/api/authed/...` routes with your GitHub token; the unprefixed routes answer CLI callers with a bot challenge. Repeat `-q` for multi-valued parameters and pass `pagination.next.cursor` back as `-q cursor=...`.
+
 ## Grafana ClickHouse
 
-Install and authenticate once:
+Discover available ClickHouse data before writing custom queries. `tables` and `columns` span every non-system database unless you pass `-d`:
 
 ```bash
-hud gcx install
-hud gcx login
-```
-
-Discover available ClickHouse data before writing custom queries:
-
-```bash
-hud gcx tables --json
-hud gcx describe workflow_job --json
-hud gcx columns test --json
-hud gcx columns torchci --table workflow_job --json
+hud gcx tables
+hud gcx tables -d ci --json
+hud gcx describe ci.runs --json
+hud gcx columns owner --json
+hud gcx columns torchci -d default --table workflow_job --json
 hud gcx sample workflow_job --limit 5 --json
 ```
+
+Key datasets:
+
+- `ci`: the test data behind the Tests API. `ci.runs` has one row per test attempt (~10B rows; always filter `started_at`). Read `ci.tests`, `ci.environments`, `ci.env_vars`, and `ci.owners` with `FINAL`.
+- `default`: GitHub webhook data such as `workflow_job`, `workflow_run`, `push`, and `pull_request`.
+- `tests` (`all_test_runs`): legacy; use `ci` instead.
 
 `sample` is for structural inspection. For recent or meaningful rows, use `hud gcx chq` with an explicit `WHERE` and `ORDER BY`.
 
@@ -160,20 +178,25 @@ Query guardrails:
 - Prefer aggregates over raw row dumps.
 - Avoid `SELECT *` except through `hud gcx sample TABLE --limit N`.
 - Treat snapshot/event tables such as `pull_request` carefully; use `countDistinct(number)` for PR counts.
-- Prefer `test_run_summary` for test-file aggregates; use `test_run_s3` only for per-test detail.
+- Answer test questions from the `ci` database (or `hud tests`), not the legacy `tests` database.
+
+Validated Test Week queries (owner test time, slowest tests per owner, shard imbalance, trunk TTGS, pull TTRS, `@periodic` health) live in [`examples/test_week/`](examples/test_week/).
 
 Pass through to `gcx` when you want any Grafana-backed datasource directly:
 
 ```bash
 hud gcx run -- datasources list
-hud gcx run -- metrics query -d grafanacloud-pytorchci-prom 'up' --from now-1h --to now
+hud gcx run -- datasources prometheus query -d grafanacloud-prom 'sum by (cluster) (gha_running_jobs)' --since 6h --step 30m
 ```
+
+Pass datasource UIDs (`grafanacloud-prom`, `ceczcsck1b20wb`) to `-d`; gcx 1.x does not resolve display names. Run ClickHouse SQL through `hud gcx chq`; the passthrough rejects `gcx datasources clickhouse query` so read-only enforcement cannot be bypassed.
 
 ## Raw CI logs
 
 ```bash
 hud job 123456789 --json
 hud log url 123456789
+hud log download 123456789                # saved under the hud-cli cache dir
 hud log download 123456789 -o /tmp/job.log
 hud log search 'RuntimeError|FAILED' --path /tmp/job.log --json
 hud log search 'RuntimeError|FAILED' --job-id 123456789 --limit 20 --json
@@ -184,7 +207,8 @@ hud log sections /tmp/job.log --start 'Traceback' --end '^$' --json
 
 ## Commands
 
-- `hud gcx install` installs the managed Grafana `gcx` binary when `gcx` is not already available.
+- `hud tests api` / `hud tests schema` query HUD's Tests API and summarize its OpenAPI schema.
+- `hud gcx install` pre-fetches HUD's pinned, checksum-verified `gcx` (other gcx commands install it on demand).
 - `hud gcx login` mints a Grafana token through HUD using GitHub auth and logs `gcx` into pytorchci.
 - `hud gcx tables`, `hud gcx describe`, `hud gcx columns`, and `hud gcx sample` discover available ClickHouse data.
 - `hud gcx chq` runs ClickHouse SQL through Grafana's PyTorch ClickHouse datasource.
@@ -195,4 +219,4 @@ hud log sections /tmp/job.log --start 'Traceback' --end '^$' --json
 
 ## Direction
 
-This project intentionally prefers one blessed path over backward-compatible fallbacks while it is early. Build common CI/CD question helpers on top of `hud gcx chq` and `gcx` datasources rather than direct HUD rate-limited data endpoints.
+This project intentionally prefers one blessed path over backward-compatible fallbacks while it is early. Use `hud tests` for per-test questions the Tests API covers, and build other CI/CD helpers on `hud gcx chq` and `gcx` datasources.

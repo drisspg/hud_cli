@@ -104,7 +104,7 @@ def test_gcx_login_uses_hud_minted_token(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert captured["token_name"] == "test-host"
-    assert "logged in" in result.output
+    assert "Logged gcx context pytorchci" in result.output
     assert "Verified HUD ClickHouse access" in result.output
 
 
@@ -170,7 +170,6 @@ def test_gcx_chq_reads_stdin(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("args", "expected_sql"),
     [
-        (["gcx", "tables", "--json"], "SHOW TABLES FROM `default`"),
         (["gcx", "describe", "workflow_job", "--json"], "DESCRIBE TABLE `default`.`workflow_job`"),
         (["gcx", "sample", "workflow_job", "--limit", "3", "--json"], "SELECT * FROM `default`.`workflow_job` LIMIT 3"),
     ],
@@ -190,6 +189,29 @@ def test_gcx_discovery_commands(monkeypatch, args, expected_sql) -> None:
     assert captured["sql"] == expected_sql
 
 
+@pytest.mark.parametrize(
+    ("args", "expected_filter"),
+    [
+        (["gcx", "tables", "--json"], "database NOT IN ('system'"),
+        (["gcx", "tables", "-d", "ci", "--json"], "database = 'ci'"),
+        (["gcx", "columns", "owner", "--json"], "database NOT IN ('system'"),
+    ],
+)
+def test_gcx_discovery_spans_databases_by_default(monkeypatch, args, expected_filter) -> None:
+    captured = {}
+
+    def fake_query(config, sql):
+        captured["sql"] = sql
+        return fake_clickhouse_response()
+
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0
+    assert expected_filter in captured["sql"]
+
+
 def test_gcx_columns_search(monkeypatch) -> None:
     captured = {}
 
@@ -199,7 +221,7 @@ def test_gcx_columns_search(monkeypatch) -> None:
 
     monkeypatch.setattr(cli, "clickhouse_query", fake_query)
 
-    result = runner.invoke(app, ["gcx", "columns", "test", "--table", "workflow_job", "--limit", "7", "--json"])
+    result = runner.invoke(app, ["gcx", "columns", "test", "-d", "default", "--table", "workflow_job", "--limit", "7", "--json"])
 
     assert result.exit_code == 0
     assert "FROM system.columns" in captured["sql"]
@@ -245,6 +267,77 @@ def test_log_url() -> None:
 
     assert result.exit_code == 0
     assert "https://ossci-raw-job-status.s3.amazonaws.com/log/123" in result.output
+
+
+def test_log_download_defaults_to_cache_dir(monkeypatch, tmp_path: Path) -> None:
+    captured = {}
+
+    def fake_download(job_id, destination):
+        captured["destination"] = destination
+        return destination
+
+    monkeypatch.setattr(cli, "LOG_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(cli, "download_log", fake_download)
+
+    result = runner.invoke(app, ["log", "download", "123"])
+
+    assert result.exit_code == 0
+    assert captured["destination"] == tmp_path / "hud-job-123.log"
+
+
+def test_tests_api_passes_path_and_repeated_query_params(monkeypatch) -> None:
+    captured = {}
+
+    def fake_get(config, path, params):
+        captured["path"] = path
+        captured["params"] = params
+        return {"tests": [], "hud_url": "https://hud.pytorch.org/tests/pytorch/pytorch"}
+
+    monkeypatch.setattr(cli, "tests_api_get", fake_get)
+
+    result = runner.invoke(
+        app,
+        ["tests", "api", "/api/tests", "-q", "repo=pytorch/pytorch", "-q", "owner=nn", "-q", "owner=optim"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["path"] == "/api/tests"
+    assert captured["params"] == [("repo", "pytorch/pytorch"), ("owner", "nn"), ("owner", "optim")]
+    assert "hud_url" in result.output
+
+
+def test_tests_api_rejects_malformed_query_param() -> None:
+    result = runner.invoke(app, ["tests", "api", "/api/tests", "-q", "repo"])
+
+    assert result.exit_code == 1
+    assert "key=value" in result.output
+
+
+def test_tests_schema_lists_parameters(monkeypatch) -> None:
+    schema = {
+        "paths": {
+            "/api/tests": {
+                "get": {
+                    "summary": "List tests",
+                    "tags": ["tests"],
+                    "parameters": [
+                        {"name": "repo", "in": "query", "required": True, "schema": {"type": "string"}},
+                        {"name": "owner", "in": "query", "schema": {"type": "array", "items": {"type": "string"}}},
+                    ],
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(cli, "tests_api_get", lambda config, path, params=None: schema)
+
+    endpoints = runner.invoke(app, ["tests", "schema", "--json"])
+    parameters = runner.invoke(app, ["tests", "schema", "/api/tests", "--json"])
+    unknown = runner.invoke(app, ["tests", "schema", "/api/nope"])
+
+    assert '"kind": "api"' in endpoints.output
+    assert '"type": "string[]"' in parameters.output
+    assert unknown.exit_code == 1
+    assert "unknown Tests API path" in unknown.output
 
 
 def test_log_search_local_file(tmp_path: Path) -> None:

@@ -6,3 +6,5 @@ __pycache__/
 .DS_Store
 docs/assets/*.html
 plots/
+agent_space/
+hud-job-*.log

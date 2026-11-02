@@ -2,6 +2,19 @@
 
 These examples intentionally keep `hud` as a primitive data CLI. Fetch bounded JSON with `hud gcx chq`, then build reports in standalone scripts.
 
+## Test Week queries
+
+[`test_week/`](test_week/) holds validated, bounded SQL for CI speedup work. Each file documents its window and definition at the top:
+
+```bash
+uv run hud gcx chq --file examples/test_week/owner_test_time.sql --json         # test hours per owner module on main
+uv run hud gcx chq --file examples/test_week/slowest_tests_for_owner.sql --json # edit the owner literal
+uv run hud gcx chq --file examples/test_week/shard_imbalance.sql --json         # slowest vs mean shard
+uv run hud gcx chq --file examples/test_week/trunk_ttgs.sql --json
+uv run hud gcx chq --file examples/test_week/pull_ttrs.sql --json
+uv run hud gcx chq --file examples/test_week/periodic_strict_health.sql --json  # @periodic workflow
+```
+
 ## Slowest test files Plotly report with test counts
 
 Fetch slow test-file data through Grafana ClickHouse, including the average number of tests reported for each file/config row, then plot it:

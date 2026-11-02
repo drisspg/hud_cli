@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from platformdirs import user_cache_dir
 from rich.console import Console
 from rich.table import Table
 
 from hud import __version__
 from hud.auth import CONFIG_PATH, load_config
 from hud.gcx import (
+    GRAFANA_SERVER,
     GcxError,
     clickhouse_query,
     gcx_failure_message,
@@ -31,14 +33,28 @@ from hud.logs import (
     s3_log_url,
     search_file,
 )
+from hud.tests_api import (
+    TestsApiError,
+    openapi_endpoints,
+    openapi_parameters,
+    parse_query_params,
+    tests_api_get,
+)
 
 app = typer.Typer(help="PyTorch CI data CLI backed by Grafana gcx.", no_args_is_help=True)
 auth_app = typer.Typer(help="Inspect CLI authentication and setup.", no_args_is_help=True)
 gcx_app = typer.Typer(help="Authenticate and query Grafana gcx.", no_args_is_help=True)
 log_app = typer.Typer(help="Fetch and search raw CI job logs.", no_args_is_help=True)
+tests_app = typer.Typer(
+    help="Query HUD's Tests API: per-test health, runs, owners, and HUD page links.",
+    no_args_is_help=True,
+)
 app.add_typer(auth_app, name="auth")
 app.add_typer(gcx_app, name="gcx")
 app.add_typer(log_app, name="log")
+app.add_typer(tests_app, name="tests")
+LOG_CACHE_DIR = Path(user_cache_dir("hud-cli", "pytorch")) / "logs"
+SYSTEM_DATABASES = ("system", "INFORMATION_SCHEMA", "information_schema")
 console = Console()
 err_console = Console(stderr=True)
 
@@ -72,9 +88,12 @@ def log_url(job_id: int = typer.Argument(..., help="GitHub Actions job id.")) ->
 @log_app.command("download")
 def log_download(
     job_id: int = typer.Argument(..., help="GitHub Actions job id."),
-    output: Annotated[Path, typer.Option("--output", "-o", help="Path to write the raw log.")] = ...,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Path to write the raw log. Defaults to the hud-cli cache."),
+    ] = None,
 ) -> None:
-    console.print(str(download_log(job_id, output)))
+    console.print(str(download_log(job_id, output or default_log_path(job_id))))
 
 
 @log_app.command("search")
@@ -171,11 +190,15 @@ def auth_setup() -> None:
     )
     table.add_row(
         "Grafana/gcx",
-        "Run `hud gcx install` if gcx is missing, then `hud gcx login`. Login mints a short-lived Grafana token from HUD using your GitHub auth and runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net --token ...` without printing the token.",
+        "Run `hud gcx install` if gcx is missing, then `hud gcx login`. Login mints a short-lived Grafana token from HUD using your GitHub auth and runs `gcx login --yes pytorchci --server https://pytorchci.grafana.net` with the token in GRAFANA_TOKEN, never printing it.",
     )
     table.add_row(
         "ClickHouse",
         "Use `hud gcx chq SQL` after `hud gcx login`. Queries go through Grafana's ClickHouse datasource, not raw ClickHouse credentials.",
+    )
+    table.add_row(
+        "Tests API",
+        "Use `hud tests api /api/tests -q repo=pytorch/pytorch`. Requests use your GitHub auth against HUD's /api/authed/ routes.",
     )
     console.print(table)
 
@@ -243,25 +266,30 @@ def gcx_login(
     if result.returncode != 0:
         console.print(f"[red]error:[/red] {gcx_failure_message(result, 'gcx login failed')}")
         raise typer.Exit(result.returncode)
-    if result.stdout:
-        console.print(result.stdout, end="")
-    if result.stderr:
-        err_console.print(result.stderr, end="")
+    console.print(f"Logged gcx context pytorchci into {GRAFANA_SERVER}.")
     try:
         clickhouse_query(config, "SELECT 1")
     except (GcxError, json.JSONDecodeError, KeyError) as error:
         console.print(f"[red]error:[/red] gcx login completed, but HUD ClickHouse verification failed: {error}")
         raise typer.Exit(1) from error
     console.print("[green]Verified HUD ClickHouse access with SELECT 1.[/green]")
-    raise typer.Exit(result.returncode)
 
 
 @gcx_app.command("tables")
 def gcx_tables(
-    database: str = typer.Option("default", "--database", "-d", help="ClickHouse database to inspect."),
+    database: str | None = typer.Option(None, "--database", "-d", help="Limit to one ClickHouse database; default lists all."),
+    limit: int = typer.Option(500, "--limit", min=1, max=5000),
     output_json: bool = typer.Option(False, "--json", help="Print rows as JSON."),
 ) -> None:
-    render_clickhouse_sql(f"SHOW TABLES FROM {quote_identifier(database)}", output_json)
+    filters = [database_filter(database), "name NOT LIKE '.%'"]
+    sql = (
+        "SELECT database, name, engine, total_rows, comment "
+        "FROM system.tables "
+        f"WHERE {' AND '.join(filters)} "
+        "ORDER BY database, name "
+        f"LIMIT {limit}"
+    )
+    render_clickhouse_sql(sql, output_json)
 
 
 @gcx_app.command("describe")
@@ -276,22 +304,22 @@ def gcx_describe(
 @gcx_app.command("columns")
 def gcx_columns(
     pattern: str | None = typer.Argument(None, help="Case-insensitive table/column/comment search text."),
-    database: str = typer.Option("default", "--database", "-d", help="ClickHouse database to inspect."),
+    database: str | None = typer.Option(None, "--database", "-d", help="Limit to one ClickHouse database; default searches all."),
     table: str | None = typer.Option(None, "--table", "-t", help="Limit search to one table."),
     limit: int = typer.Option(100, "--limit", min=1, max=1000),
     output_json: bool = typer.Option(False, "--json", help="Print rows as JSON."),
 ) -> None:
-    filters = [f"database = {sql_string(database)}"]
+    filters = [database_filter(database), "table NOT LIKE '.%'"]
     if table:
         filters.append(f"table = {sql_string(table)}")
     if pattern:
         like = sql_string(f"%{pattern}%")
         filters.append(f"(table ILIKE {like} OR name ILIKE {like} OR comment ILIKE {like})")
     sql = (
-        "SELECT table, name, type, comment "
+        "SELECT database, table, name, type, comment "
         "FROM system.columns "
         f"WHERE {' AND '.join(filters)} "
-        "ORDER BY table, position "
+        "ORDER BY database, table, position "
         f"LIMIT {limit}"
     )
     render_clickhouse_sql(sql, output_json)
@@ -349,6 +377,51 @@ def gcx_run(ctx: typer.Context) -> None:
     raise typer.Exit(result.returncode)
 
 
+@tests_app.command("api")
+def tests_api(
+    path: str = typer.Argument(..., help="OpenAPI path, e.g. /api/tests or /api/tests/test/TEST_ID."),
+    query: Annotated[
+        list[str] | None,
+        typer.Option("--query", "-q", help="Query parameter as key=value; repeat for multiple or repeated keys."),
+    ] = None,
+) -> None:
+    """GET a Tests API endpoint and print its JSON response."""
+    try:
+        data = tests_api_get(load_config(), path, parse_query_params(query or []))
+    except TestsApiError as error:
+        console.print(f"[red]error:[/red] {error}")
+        raise typer.Exit(1) from error
+    print_json(data)
+
+
+@tests_app.command("schema")
+def tests_schema(
+    path: str | None = typer.Argument(None, help="Show parameters for this OpenAPI path; default lists endpoints."),
+    output_json: bool = typer.Option(False, "--json", help="Print rows as JSON."),
+) -> None:
+    """Summarize HUD's Tests API OpenAPI schema."""
+    try:
+        schema = tests_api_get(load_config(), "/api/openapi.json")
+        rows = openapi_parameters(schema, path) if path else openapi_endpoints(schema)
+    except TestsApiError as error:
+        console.print(f"[red]error:[/red] {error}")
+        raise typer.Exit(1) from error
+    if output_json:
+        print_json(rows)
+        return
+    render_rows(rows)
+
+
+def default_log_path(job_id: int) -> Path:
+    return LOG_CACHE_DIR / f"hud-job-{job_id}.log"
+
+
+def database_filter(database: str | None) -> str:
+    if database:
+        return f"database = {sql_string(database)}"
+    return f"database NOT IN ({', '.join(sql_string(name) for name in SYSTEM_DATABASES)})"
+
+
 def render_clickhouse_sql(sql: str, output_json: bool) -> None:
     try:
         rows = rows_from_gcx_response(clickhouse_query(load_config(), sql))
@@ -401,7 +474,7 @@ def resolve_log_path(path: Path | None, job_id: int | None, output: Path | None)
         return path
     if job_id is None:
         raise typer.BadParameter("provide --path or --job-id")
-    return download_log(job_id, output or Path(f"hud-job-{job_id}.log"))
+    return download_log(job_id, output or default_log_path(job_id))
 
 
 def print_json(data: Any) -> None:
@@ -425,7 +498,7 @@ def run() -> int:
     try:
         app()
         return 0
-    except (GcxError, LogError) as error:
+    except (GcxError, LogError, TestsApiError) as error:
         console.print(f"[red]error:[/red] {error}")
         return 1
 

@@ -162,13 +162,13 @@ def test_parse_log_recovers_actions_commands_models_and_silences() -> None:
 
 
 def test_nest_lanes_stacks_contained_spans_and_spills_partial_overlaps() -> None:
-    spans = [("step", Span("step", 0, 100_000)), ("file", Span("a", 0, 100_000)), ("test", Span("x", 10_000, 20_000)), ("test", Span("y", 15_000, 30_000)), ("test", Span("z", 30_000, 40_000))]
+    spans = [("step", Span("step", 0, 100_000)), ("file", Span("a", 0, 100_000)), ("test", Span("x", 10_000, 20_000)), ("test", Span("y", 19_500, 20_800)), ("test", Span("z", 30_000, 40_000))]
 
     lanes = [[(ms, span.name if span else "end") for ms, _, span in events] for events in nest_lanes(spans)]
 
     assert lanes == [
         [(0, "step"), (0, "a"), (10_000, "x"), (20_000, "end"), (30_000, "z"), (40_000, "end"), (100_000, "end"), (100_000, "end")],
-        [(15_000, "y"), (30_000, "end")],
+        [(19_500, "y"), (20_800, "end")],
     ]
 
 

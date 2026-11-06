@@ -20,8 +20,9 @@ from typing import Any
 MIN_GAP_MS = 1000
 MIN_COMMAND_MS = 0
 MIN_SILENCE_MS = 30_000
-# GitHub step times are truncated to whole seconds, so log spans can overrun their step by up to 1s.
-NEST_SLACK_MS = 1000
+# GitHub job and step times are truncated to whole seconds, so finer spans can overrun them by up to 1s.
+WHOLE_SECOND_CATEGORIES = frozenset({"job", "step"})
+WHOLE_SECOND_SLACK_MS = 1000
 MAX_NAME = 120
 MAX_ARG = 2000
 LOG_TIMESTAMP = re.compile(r"^\ufeff?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?Z ?")
@@ -238,32 +239,39 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
     return spans
 
 
-def nest_lanes(
-    spans: Iterable[tuple[str, Span]], slack_ms: int = NEST_SLACK_MS
-) -> list[list[tuple[int, str, Span | None]]]:
+def nest_lanes(spans: Iterable[tuple[str, Span]]) -> list[list[tuple[int, str, Span | None]]]:
     """Pack (category, span) pairs onto lanes that Perfetto can draw as properly nested slice stacks.
 
     A span joins the first lane whose innermost open span contains it (or that has nothing open), so
     steps, actions, commands, test processes, files, and cases stack under one another and concurrent
     work spills onto further lanes. Spans with equal bounds nest in input order, so pass parents
-    first. A span overrunning its parent by at most `slack_ms` nests with its end clipped to the parent's. Returns each lane's ("begin", category, span) / ("end", category, None) events in order,
+    first. A span overrunning a whole-second job or step parent by at most 1s nests with its end
+    clipped to the parent's; any other partial overlap spills onto another lane. Returns each lane's ("begin", category, span) / ("end", category, None) events in order,
     keyed by millisecond timestamp.
     """
-    lanes: list[tuple[list[Span], list[tuple[int, str, Span | None]]]] = []
+    lanes: list[tuple[list[tuple[str, Span]], list[tuple[int, str, Span | None]]]] = []
+
+    def fits(stack: list[tuple[str, Span]], span: Span) -> bool:
+        if not stack:
+            return True
+        parent_category, parent = stack[-1]
+        slack_ms = WHOLE_SECOND_SLACK_MS if parent_category in WHOLE_SECOND_CATEGORIES else 0
+        return span.end_ms <= parent.end_ms + slack_ms
+
     for category, span in sorted(spans, key=lambda item: (item[1].start_ms, -item[1].end_ms)):
         for stack, events in lanes:
-            while stack and stack[-1].end_ms <= span.start_ms:
-                events.append((stack.pop().end_ms, "end", None))
-        lane = next(((stack, events) for stack, events in lanes if not stack or span.end_ms <= stack[-1].end_ms + slack_ms), None)
+            while stack and stack[-1][1].end_ms <= span.start_ms:
+                events.append((stack.pop()[1].end_ms, "end", None))
+        lane = next(((stack, events) for stack, events in lanes if fits(stack, span)), None)
         if lane is None:
             lane = ([], [])
             lanes.append(lane)
-        if lane[0] and span.end_ms > lane[0][-1].end_ms:
-            span = replace(span, end_ms=lane[0][-1].end_ms)
-        lane[0].append(span)
+        if lane[0] and span.end_ms > lane[0][-1][1].end_ms:
+            span = replace(span, end_ms=lane[0][-1][1].end_ms)
+        lane[0].append((category, span))
         lane[1].append((span.start_ms, category, span))
     for stack, events in lanes:
-        events.extend((stack.pop().end_ms, "end", None) for _ in range(len(stack)))
+        events.extend((stack.pop()[1].end_ms, "end", None) for _ in range(len(stack)))
     return [events for _, events in lanes]
 
 

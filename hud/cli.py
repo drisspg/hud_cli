@@ -144,6 +144,8 @@ def trace(
         jobs = rows_from_gcx_response(clickhouse_query(config, sql))
         if not jobs:
             raise GcxError(f"no jobs found in default.workflow_job for {f'run {run_id}' if run_id is not None else job_ids}")
+        if missing := sorted(set(job_ids or ()) - {int(job["id"]) for job in jobs}):
+            raise GcxError(f"jobs {missing} not found in default.workflow_job")
         jobs = sorted(jobs, key=lambda job: int(job["created_ms"]) - int(job["completed_ms"]))
         skipped = len(jobs) - max_jobs if run_id is not None else 0
         timelines = [load_timeline(config, job, use_log, links, max_tests) for job in jobs[: max_jobs if run_id is not None else None]]

@@ -313,3 +313,13 @@ def test_aligned_jobs_start_running_together_and_keep_their_queues() -> None:
 
     assert [(t.job["created_ms"], t.job["started_ms"]) for t in (first, second)] == [(20_000, 30_000), (0, 30_000)]
     assert (first.steps[0].start_ms, first.log.processes[0].start_ms) == (40_000, 50_000)
+
+
+def test_trace_fails_when_a_requested_job_is_missing(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(cli, "clickhouse_query", fake_query)
+
+    result = runner.invoke(app, ["trace", "7", "999", "--no-log", "--no-links", "-o", str(tmp_path / "t.pftrace")])
+
+    assert result.exit_code == 1
+    assert "[999]" in result.output
+    assert not (tmp_path / "t.pftrace").exists()

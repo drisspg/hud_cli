@@ -194,7 +194,7 @@ def test_trace_writes_perfetto_events_and_summary(monkeypatch, tmp_path) -> None
     result = runner.invoke(app, ["trace", "7", "--no-log", "-o", str(output), "--json"])
 
     assert result.exit_code == 0, result.output
-    summary = json.loads(result.output)
+    summary = json.loads(result.output)["jobs"][0]
     assert summary["queue_sec"] == 10
     assert summary["main_step_sec"] == 70
     assert summary["main_step_idle_sec"] == 40
@@ -279,3 +279,26 @@ def test_find_test_line_prefers_the_instantiated_class_over_a_longer_def_elsewhe
 
     assert find_test_line(find_test_defs(source), "TestNNDeviceTypeCUDA", "test_conv_cuda") == 4
     assert find_test_line(find_test_defs(source), "TestNN", "test_conv_cuda") == 2
+
+
+def test_trace_puts_several_jobs_on_one_clock_longest_first(monkeypatch, tmp_path) -> None:
+    never_ran = JOB | {"id": 8, "name": "mac / test (mps)", "runner_name": "", "conclusion": "cancelled", "created_ms": 0, "started_ms": 0, "completed_ms": 600_000}
+
+    def query(config, sql, settings=None):
+        if "ARRAY JOIN steps" in sql:
+            return frame(STEPS if "id = 7" in sql else [])
+        if "ci.runs" in sql:
+            return frame(TESTS if "= 7\n" in sql else [])
+        return frame([JOB, never_ran])
+
+    monkeypatch.setattr(cli, "clickhouse_query", query)
+    output = tmp_path / "jobs.pftrace"
+
+    result = runner.invoke(app, ["trace", "7", "8", "--no-log", "--no-links", "-o", str(output), "--json"])
+
+    assert result.exit_code == 0, result.output
+    jobs = {job["job_id"]: job for job in json.loads(result.output)["jobs"]}
+    assert (jobs[8]["queue_sec"], jobs[8]["runtime_sec"]) == (600, 0)
+    slices = read_slices(output.read_bytes())
+    assert ("queued (never picked up)", 0, 600_000) in {(s["name"], s["start_ms"], s["dur_ms"]) for s in slices}
+    assert ("Test", 20_000, 70_000) in {(s["name"], s["start_ms"], s["dur_ms"]) for s in slices}

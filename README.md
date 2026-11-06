@@ -203,6 +203,8 @@ Pass datasource UIDs (`grafanacloud-prom`, `ceczcsck1b20wb`) to `-d`; gcx 1.x do
 ```bash
 hud trace 123456789                       # writes ./hud-job-123456789.pftrace
 hud trace 123456789 --no-log --json -o /tmp/job.pftrace
+hud trace 123456789 123456790 --no-links  # several jobs on one clock: ./hud-jobs-123456789-2.pftrace
+hud trace --run 42182634514 --no-links    # every job of a workflow run (longest --max-jobs 30): ./hud-run-42182634514.pftrace
 ```
 
 The output is a Perfetto protobuf trace (`.pftrace`); open it at https://ui.perfetto.dev. The `timeline` tracks nest every span inside the span that contains it, so each slice stack reads coarse to fine (the slice category names the level):
@@ -215,7 +217,7 @@ Separate tracks mark `idle in main step` (Test/Build time with no test case runn
 
 Clicked slices carry links that Perfetto renders as clickable: `source` (the test's `def` line, test file, script, or torchbench model at the job's commit) and `github_log` (the GitHub step log). Test-file contents come from raw.githubusercontent.com; pass `--no-links` to skip fetching.
 
-Concurrent or partially overlapping spans spill onto numbered `timeline N` tracks; a span overrunning its parent by under 1s (GitHub step times are whole seconds) is clipped to the parent instead. Benchmark and XPU jobs do not upload to `ci.runs`, so their finest level is the log.
+Several jobs share one wall clock under a `jobs` group, longest (queue plus run) first, each named `<minutes>m <job name> (<job id>)`. A job no runner ever picked up shows as one `queued (never picked up)` slice (GitHub sets its `started_at` at creation). Concurrent or partially overlapping spans spill onto numbered `timeline N` tracks; a span overrunning its parent by under 1s (GitHub step times are whole seconds) is clipped to the parent instead. Benchmark and XPU jobs do not upload to `ci.runs`, so their finest level is the log.
 
 ## Raw CI logs
 

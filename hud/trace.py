@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import struct
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
@@ -69,7 +69,9 @@ class JobTimeline:
     truncated: bool = False
 
 
-def job_sql(job_id: int) -> str:
+def jobs_sql(job_ids: Sequence[int] = (), run_id: int | None = None, limit: int = 1) -> str:
+    """Jobs by id, or every job of one workflow run; exactly one of `job_ids` and `run_id`."""
+    where = f"run_id = {int(run_id)}" if run_id is not None else f"id IN ({', '.join(str(int(job_id)) for job_id in job_ids)})"
     return f"""
 SELECT id, name, workflow_name, html_url, head_sha, head_branch, runner_name, conclusion,
        toUnixTimestamp64Milli(created_at) AS created_ms,
@@ -77,8 +79,9 @@ SELECT id, name, workflow_name, html_url, head_sha, head_branch, runner_name, co
        -- In-progress jobs have an epoch completed_at; treat them as running until now.
        toUnixTimestamp64Milli(if(completed_at < started_at, now64(9), completed_at)) AS completed_ms
 FROM default.workflow_job FINAL
-WHERE id = {int(job_id)}
-LIMIT 1
+WHERE {where}
+ORDER BY created_ms
+LIMIT {int(limit)}
 """
 
 
@@ -412,7 +415,7 @@ class PerfettoTrace:
                 event += b"".join(_bytes(4, _debug_annotation(key, value)) for key, value in span.args.items() if value is not None)
             self._packet(_uint(8, ms * 1_000_000) + _bytes(11, event))
 
-    def lanes(self, name: str, spans: Iterable[tuple[str, Span]], parent: int, description: str | None = None) -> None:
+    def lanes(self, name: str, spans: Iterable[tuple[str, Span]], parent: int | None, description: str | None = None) -> None:
         """One track per lane of `nest_lanes(spans)`, grouped under a `name` track when there are several."""
         lanes = nest_lanes(spans)
         group = self.track(name, parent, description) if len(lanes) > 1 else parent
@@ -423,20 +426,26 @@ class PerfettoTrace:
         return b"".join(self.packets)
 
 
-def build_trace(timeline: JobTimeline) -> bytes:
-    """Serialize `timeline` as a .pftrace for https://ui.perfetto.dev.
-
-    The `timeline` lanes stack every span by containment, coarse to fine: job, GitHub steps, log
-    actions, shell commands, benchmark models and test processes, test files, and test cases.
-    """
+def job_spans(timeline: JobTimeline) -> list[Span]:
+    """Queued and running spans; a job no runner picked up was queued until it ended (e.g. cancelled)."""
     job = timeline.job
     created, started, completed = (int(job[key]) for key in ("created_ms", "started_ms", "completed_ms"))
+    if not job["runner_name"] and not timeline.steps:
+        # GitHub sets started_at at creation for jobs that never get a runner.
+        return [Span("queued (never picked up)", created, max(completed, created), {"conclusion": job["conclusion"]})]
     metadata = {key: job[key] for key in ("id", "workflow_name", "html_url", "head_sha", "head_branch")}
     running = {"runner": job["runner_name"], "conclusion": job["conclusion"], "truncated_tests": timeline.truncated} | metadata
+    return [
+        *([Span("queued", created, started)] if started > created else []),
+        Span("running", started, max(completed, started), running),
+    ]
+
+
+def add_job(trace: PerfettoTrace, timeline: JobTimeline, name: str, parent: int | None = None) -> None:
+    """One job's track group: nested `timeline` lanes plus idle-gap and log-silence tracks."""
     log = timeline.log
     stacked: list[tuple[str, Span]] = [
-        *([("job", Span("queued", created, started))] if started > created else []),
-        ("job", Span("running", started, max(completed, started), running)),
+        *(("job", span) for span in job_spans(timeline)),
         *(("step", step) for step in timeline.steps),
         *(("action", action) for action in log.actions),
         *(("command", command) for command in log.commands),
@@ -445,8 +454,7 @@ def build_trace(timeline: JobTimeline) -> bytes:
         *(("file", file) for file in file_spans(timeline.tests)),
         *(("test", test) for test in timeline.tests),
     ]
-    trace = PerfettoTrace()
-    root = trace.track(job["name"], description=job["html_url"])
+    root = trace.track(name, parent, timeline.job["html_url"])
     trace.lanes("timeline", stacked, root, "job > step > action > command > model/process > test file > test case")
     trace.lanes("idle in main step", (("gap", gap) for gap in idle_gaps(timeline)), root, "Test/Build time with no test case running")
     trace.lanes(
@@ -455,6 +463,26 @@ def build_trace(timeline: JobTimeline) -> bytes:
         root,
         "Log gaps outside test processes, test cases, and benchmark models",
     )
+
+
+def job_minutes(timeline: JobTimeline) -> int:
+    return round((int(timeline.job["completed_ms"]) - int(timeline.job["created_ms"])) / 60_000)
+
+
+def build_trace(timelines: Sequence[JobTimeline]) -> bytes:
+    """Serialize jobs as a .pftrace for https://ui.perfetto.dev, on one shared wall clock.
+
+    Each job's `timeline` lanes stack every span by containment, coarse to fine: job, GitHub steps,
+    log actions, shell commands, benchmark models and test processes, test files, and test cases.
+    Several jobs go under a `jobs` group, longest (queue plus run) first, named `<minutes>m <job> (<id>)`.
+    """
+    trace = PerfettoTrace()
+    if len(timelines) == 1:
+        add_job(trace, timelines[0], timelines[0].job["name"])
+        return trace.serialize()
+    group = trace.track(f"jobs ({len(timelines)}, longest first)")
+    for timeline in sorted(timelines, key=lambda item: -job_minutes(item)):
+        add_job(trace, timeline, f"{job_minutes(timeline)}m {timeline.job['name']} ({timeline.job['id']})", group)
     return trace.serialize()
 
 
@@ -480,8 +508,9 @@ def summarize(timeline: JobTimeline, top: int = 10) -> dict[str, Any]:
         "job_id": job["id"],
         "name": job["name"],
         "html_url": job["html_url"],
-        "queue_sec": round(max(int(job["started_ms"]) - int(job["created_ms"]), 0) / 1000),
-        "runtime_sec": round((int(job["completed_ms"]) - int(job["started_ms"])) / 1000),
+        "conclusion": job["conclusion"],
+        "queue_sec": round(sum(span.duration_ms for span in job_spans(timeline) if span.name.startswith("queued")) / 1000),
+        "runtime_sec": round(sum(span.duration_ms for span in job_spans(timeline) if span.name == "running") / 1000),
         "main_step": test_step.name if test_step else None,
         "main_step_sec": round(test_step.duration_ms / 1000) if test_step else None,
         "main_step_idle_sec": round(sum(gap.duration_ms for gap in idle_gaps(timeline)) / 1000) if timeline.tests else None,

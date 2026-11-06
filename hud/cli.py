@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from hud import __version__
-from hud.auth import CONFIG_PATH, load_config
+from hud.auth import CONFIG_PATH, HudConfig, load_config
 from hud.gcx import (
     GRAFANA_SERVER,
     GcxError,
@@ -50,7 +50,7 @@ from hud.trace import (
     JobTimeline,
     LogSpans,
     build_trace,
-    job_sql,
+    jobs_sql,
     parse_log,
     source_paths,
     step_spans,
@@ -100,60 +100,83 @@ def job(
     console.print(data)
 
 
-@app.command("trace")
-def trace(
-    job_id: int = typer.Argument(..., help="GitHub Actions job id."),
-    output: Annotated[
-        Path | None,
-        typer.Option("--output", "-o", help="Trace path. Defaults to ./hud-job-JOB_ID.pftrace."),
-    ] = None,
-    use_log: bool = typer.Option(True, "--log/--no-log", help="Add spans parsed from the raw job log."),
-    links: bool = typer.Option(True, "--links/--no-links", help="Add GitHub source and step-log links; fetches test files at the job's commit."),
-    max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows from ci.runs."),
-    output_json: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
-) -> None:
-    """Write a Perfetto .pftrace of where one job spent its time, nested from steps down to test cases."""
-    config = load_config()
-    try:
-        jobs = rows_from_gcx_response(clickhouse_query(config, job_sql(job_id)))
-        if not jobs:
-            raise GcxError(f"job {job_id} not found in default.workflow_job")
-        job = jobs[0]
-        steps = step_spans(rows_from_gcx_response(clickhouse_query(config, steps_sql(job_id))))
-        test_rows = rows_from_gcx_response(
-            clickhouse_query(config, tests_sql(job_id, job["started_ms"], job["completed_ms"], max_tests), {"max_execution_time": 120})
-        )
-    except (GcxError, json.JSONDecodeError, KeyError) as error:
-        console.print(f"[red]error:[/red] {error}")
-        raise typer.Exit(1) from error
+def load_timeline(config: HudConfig, job: dict[str, Any], use_log: bool, links: bool, max_tests: int) -> JobTimeline:
+    job_id = int(job["id"])
+    steps = step_spans(rows_from_gcx_response(clickhouse_query(config, steps_sql(job_id))))
+    test_rows = rows_from_gcx_response(
+        clickhouse_query(config, tests_sql(job_id, job["started_ms"], job["completed_ms"], max_tests), {"max_execution_time": 120})
+    )
     log = LogSpans()
-    if use_log:
+    if use_log and job["runner_name"]:
         try:
             log = parse_log(download_log(job_id, default_log_path(job_id)).read_text(errors="replace"))
         except (LogError, requests.RequestsError) as error:
-            err_console.print(f"[yellow]warning:[/yellow] {error}; trace has no log spans")
+            err_console.print(f"[yellow]warning:[/yellow] job {job_id}: {error}; trace has no log spans for it")
     timeline = JobTimeline(job, steps, test_spans(test_rows[:max_tests]), log, len(test_rows) > max_tests)
     if links:
-        sources = fetch_repo_files(job["head_sha"], source_paths(timeline))
-        timeline = with_links(timeline, sources.get)
-    path = output or Path(f"hud-job-{job_id}.pftrace")
-    path.write_bytes(build_trace(timeline))
-    summary = summarize(timeline) | {"trace": str(path.resolve()), "open_with": "https://ui.perfetto.dev"}
+        timeline = with_links(timeline, fetch_repo_files(job["head_sha"], source_paths(timeline)).get)
+    return timeline
+
+
+@app.command("trace")
+def trace(
+    job_ids: Annotated[list[int] | None, typer.Argument(help="GitHub Actions job ids; several share one timeline.")] = None,
+    run_id: Annotated[int | None, typer.Option("--run", help="Trace every job of this GitHub Actions workflow run instead.")] = None,
+    max_jobs: int = typer.Option(30, "--max-jobs", min=1, max=200, help="Cap on jobs traced from --run, longest first."),
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Trace path. Defaults to ./hud-job-JOB_ID.pftrace, ./hud-run-RUN_ID.pftrace, or ./hud-jobs-FIRST_ID-N.pftrace."),
+    ] = None,
+    use_log: bool = typer.Option(True, "--log/--no-log", help="Add spans parsed from the raw job logs."),
+    links: bool = typer.Option(True, "--links/--no-links", help="Add GitHub source and step-log links; fetches test files at each job's commit."),
+    max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows from ci.runs per job."),
+    output_json: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
+) -> None:
+    """Write a Perfetto .pftrace of where jobs spent their time, nested from steps down to test cases."""
+    if bool(job_ids) == (run_id is not None):
+        console.print("[red]error:[/red] pass job ids or --run, not both or neither")
+        raise typer.Exit(2)
+    config = load_config()
+    try:
+        sql = jobs_sql(run_id=run_id, limit=1000) if run_id is not None else jobs_sql(job_ids, limit=len(job_ids))
+        jobs = rows_from_gcx_response(clickhouse_query(config, sql))
+        if not jobs:
+            raise GcxError(f"no jobs found in default.workflow_job for {f'run {run_id}' if run_id is not None else job_ids}")
+        jobs = sorted(jobs, key=lambda job: int(job["created_ms"]) - int(job["completed_ms"]))
+        skipped = len(jobs) - max_jobs if run_id is not None else 0
+        timelines = [load_timeline(config, job, use_log, links, max_tests) for job in jobs[: max_jobs if run_id is not None else None]]
+    except (GcxError, json.JSONDecodeError, KeyError) as error:
+        console.print(f"[red]error:[/red] {error}")
+        raise typer.Exit(1) from error
+    if output:
+        path = output
+    elif run_id is not None:
+        path = Path(f"hud-run-{run_id}.pftrace")
+    elif len(job_ids) == 1:
+        path = Path(f"hud-job-{job_ids[0]}.pftrace")
+    else:
+        path = Path(f"hud-jobs-{job_ids[0]}-{len(job_ids)}.pftrace")
+    path.write_bytes(build_trace(timelines))
+    summaries = [summarize(timeline) for timeline in timelines]
+    result = {"trace": str(path.resolve()), "open_with": "https://ui.perfetto.dev", "jobs_skipped": max(skipped, 0), "jobs": summaries}
     if output_json:
-        print_json(summary)
+        print_json(result)
         return
-    console.print(f"[bold]{summary['name']}[/bold]  {summary['html_url']}")
-    idle = summary["main_step_idle_sec"]
-    console.print(
-        f"queue {summary['queue_sec']}s, runtime {summary['runtime_sec']}s, "
-        f"{summary['main_step']} step {summary['main_step_sec']}s"
-        + (f" ({idle}s with no test case running)" if idle is not None else "")
-        + f", {summary['log_silent_outside_tests_sec']}s log-silent outside tests"
-    )
-    console.print(", ".join(f"{count} {name.replace('_', ' ')}" for name, count in summary["counts"].items()))
-    if timeline.truncated:
-        console.print(f"[yellow]test cases truncated at --max-tests {max_tests}[/yellow]")
-    console.print(f"Wrote {summary['trace']}; open it in {summary['open_with']} (drag and drop).")
+    for summary, timeline in zip(summaries, timelines, strict=True):
+        console.print(f"[bold]{summary['name']}[/bold] ({summary['conclusion']})  {summary['html_url']}")
+        idle = summary["main_step_idle_sec"]
+        console.print(
+            f"  queue {summary['queue_sec']}s, runtime {summary['runtime_sec']}s"
+            + (f", {summary['main_step']} step {summary['main_step_sec']}s" if summary["main_step"] else "")
+            + (f" ({idle}s with no test case running)" if idle is not None else "")
+            + f", {summary['log_silent_outside_tests_sec']}s log-silent outside tests"
+        )
+        console.print("  " + ", ".join(f"{count} {name.replace('_', ' ')}" for name, count in summary["counts"].items()))
+        if timeline.truncated:
+            console.print(f"  [yellow]test cases truncated at --max-tests {max_tests}[/yellow]")
+    if skipped > 0:
+        console.print(f"[yellow]skipped {skipped} shorter jobs past --max-jobs {max_jobs}[/yellow]")
+    console.print(f"Wrote {result['trace']}; open it in {result['open_with']} (drag and drop).")
 
 
 @log_app.command("url")

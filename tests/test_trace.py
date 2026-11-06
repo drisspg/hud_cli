@@ -29,7 +29,7 @@ def frame(rows):
 
 
 JOB = {
-    "id": 7, "name": "linux / test (default, 1, 2, gpu)", "workflow_name": "trunk",
+    "id": 7, "run_id": 70, "name": "linux / test (default, 1, 2, gpu)", "workflow_name": "trunk",
     "html_url": "https://github.com/x/job/7", "head_sha": "abc", "head_branch": "main",
     "runner_name": "r1", "conclusion": "success",
     "created_ms": 0, "started_ms": 10_000, "completed_ms": 100_000,
@@ -323,3 +323,28 @@ def test_trace_fails_when_a_requested_job_is_missing(monkeypatch, tmp_path) -> N
     assert result.exit_code == 1
     assert "[999]" in result.output
     assert not (tmp_path / "t.pftrace").exists()
+
+
+def test_nest_lanes_never_nests_a_span_under_one_of_the_same_or_finer_category() -> None:
+    spans = [("file", Span("test_a.py", 0, 100_000)), ("test", Span("A.test_x", 0, 90_000)), ("file", Span("test_b.py", 10_000, 20_000))]
+
+    lanes = [[span.name for _, _, span in events if span] for events in nest_lanes(spans)]
+
+    assert lanes == [["test_a.py", "A.test_x"], ["test_b.py"]]
+
+
+def test_trace_falls_back_to_the_test_reports_artifact_when_ci_runs_is_empty(monkeypatch, tmp_path) -> None:
+    def query(config, sql, settings=None):
+        return frame([]) if "ci.runs" in sql else fake_query(config, sql, settings)
+
+    archives = []
+    monkeypatch.setattr(cli, "clickhouse_query", query)
+    monkeypatch.setattr(cli, "fetch_test_reports", lambda run_id, job_id: archives.append((run_id, job_id)) or b"zip")
+    monkeypatch.setattr(cli, "report_rows", lambda archive: TESTS)
+
+    result = runner.invoke(app, ["trace", "7", "--no-log", "--no-links", "-o", str(tmp_path / "t.pftrace"), "--json"])
+
+    assert result.exit_code == 0, result.output
+    summary = json.loads(result.output)["jobs"][0]
+    assert archives == [(70, 7)]
+    assert (summary["test_cases_source"], summary["counts"]["test_cases"]) == ("test-reports artifact", 3)

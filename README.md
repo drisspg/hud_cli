@@ -212,13 +212,13 @@ The output is a Perfetto protobuf trace (`.pftrace`); open it at https://ui.perf
 
 - `job` (queued, running) and `step` (GitHub steps, second resolution) from `default.workflow_job`.
 - From the raw log (100 ns timestamps per line, kept at millisecond resolution): `action` (`##[group]Run ...` composite-action sections), `command` (every `set -x` line, including `++` subshell commands, with `xtrace_depth`), `model` (dynamo benchmark `cuda train <model>` runs from the loading bar onward, with the `pass`/`1.23x`/`eager_fail_to_run` result and enclosing command), and `process` (run_test.py `Running`/`Finished`, including import/collection).
-- From `ci.runs` (millisecond resolution): `file` (one span per file report) and `test` (test cases).
+- From `ci.runs` (millisecond resolution): `file` (one span per file report) and `test` (test cases). When `ci.runs` has no rows for a job (XPU, for example), `hud trace` reads its `test-reports-*_<job id>.zip` GitHub artifact through `gh api` instead: JUnit XML records each suite's start and each case's duration, so cases are laid back to back (pytest-xdist suites are packed onto estimated workers). The summary's `test_cases_source` says which was used; pass `--no-artifacts` to skip. Processes that never finish (timeouts) write no XML, so they stay at process granularity.
 
 Separate tracks mark `idle in main step` (Test/Build time with no test case running) and `log silent outside tests >=30s` (log gaps outside test processes, test cases, and benchmark models, with the enclosing command in `during`; run_test.py buffers test output, so the log is always quiet while tests run).
 
 Clicked slices carry links that Perfetto renders as clickable: `source` (the test's `def` line, test file, script, or torchbench model at the job's commit) and `github_log` (the GitHub step log). Test-file contents come from raw.githubusercontent.com; pass `--no-links` to skip fetching.
 
-Several jobs share one wall clock under a `jobs` group, longest (queue plus run) first, each named `<minutes>m <job name> (<job id>)`. A job no runner ever picked up shows as one `queued (never picked up)` slice (GitHub sets its `started_at` at creation). Concurrent or partially overlapping spans spill onto numbered `timeline N` tracks; a span overrunning its parent by under 1s (GitHub step times are whole seconds) is clipped to the parent instead. Benchmark and XPU jobs do not upload to `ci.runs`, so their finest level is the log.
+Several jobs share one wall clock under a `jobs` group, longest (queue plus run) first, each named `<minutes>m <job name> (<job id>)`. A job no runner ever picked up shows as one `queued (never picked up)` slice (GitHub sets its `started_at` at creation). Concurrent or partially overlapping spans spill onto numbered `timeline N` tracks; a span overrunning its parent by under 1s (GitHub step times are whole seconds) is clipped to the parent instead. A span nests only under a coarser category (job > step > action > command > model/process > file > test). Benchmark jobs upload no test reports, so their finest level is the log.
 
 ## Raw CI logs
 

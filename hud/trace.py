@@ -23,6 +23,8 @@ MIN_SILENCE_MS = 30_000
 # GitHub job and step times are truncated to whole seconds, so finer spans can overrun them by up to 1s.
 WHOLE_SECOND_CATEGORIES = frozenset({"job", "step"})
 WHOLE_SECOND_SLACK_MS = 1000
+# Nesting depth order of `timeline` categories: a span only nests under a strictly coarser category.
+CATEGORY_RANKS = {"job": 0, "step": 1, "action": 2, "command": 3, "model": 4, "process": 4, "file": 5, "test": 6}
 MAX_NAME = 120
 MAX_ARG = 2000
 LOG_TIMESTAMP = re.compile(r"^\ufeff?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?Z ?")
@@ -67,13 +69,16 @@ class JobTimeline:
     tests: list[Span]
     log: LogSpans
     truncated: bool = False
+    # Where test cases came from: "ci.runs", "test-reports artifact" (start times laid out from
+    # JUnit durations), or None when the job has none.
+    tests_source: str | None = None
 
 
 def jobs_sql(job_ids: Sequence[int] = (), run_id: int | None = None, limit: int = 1) -> str:
     """Jobs by id, or every job of one workflow run; exactly one of `job_ids` and `run_id`."""
     where = f"run_id = {int(run_id)}" if run_id is not None else f"id IN ({', '.join(str(int(job_id)) for job_id in job_ids)})"
     return f"""
-SELECT id, name, workflow_name, html_url, head_sha, head_branch, runner_name, conclusion,
+SELECT id, run_id, name, workflow_name, html_url, head_sha, head_branch, runner_name, conclusion,
        toUnixTimestamp64Milli(created_at) AS created_ms,
        toUnixTimestamp64Milli(started_at) AS started_ms,
        -- In-progress jobs have an epoch completed_at; treat them as running until now.
@@ -245,19 +250,21 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
 def nest_lanes(spans: Iterable[tuple[str, Span]]) -> list[list[tuple[int, str, Span | None]]]:
     """Pack (category, span) pairs onto lanes that Perfetto can draw as properly nested slice stacks.
 
-    A span joins the first lane whose innermost open span contains it (or that has nothing open), so
-    steps, actions, commands, test processes, files, and cases stack under one another and concurrent
-    work spills onto further lanes. Spans with equal bounds nest in input order, so pass parents
+    A span joins the first lane whose innermost open span contains it and has a coarser category (see
+    `CATEGORY_RANKS`), or that has nothing open, so steps, actions, commands, test processes, files,
+    and cases stack under one another and concurrent work spills onto further lanes. Spans with equal bounds nest in input order, so pass parents
     first. A span overrunning a whole-second job or step parent by at most 1s nests with its end
     clipped to the parent's; any other partial overlap spills onto another lane. Returns each lane's ("begin", category, span) / ("end", category, None) events in order,
     keyed by millisecond timestamp.
     """
     lanes: list[tuple[list[tuple[str, Span]], list[tuple[int, str, Span | None]]]] = []
 
-    def fits(stack: list[tuple[str, Span]], span: Span) -> bool:
+    def fits(stack: list[tuple[str, Span]], category: str, span: Span) -> bool:
         if not stack:
             return True
         parent_category, parent = stack[-1]
+        if CATEGORY_RANKS.get(parent_category, 0) >= CATEGORY_RANKS.get(category, 0):
+            return False
         slack_ms = WHOLE_SECOND_SLACK_MS if parent_category in WHOLE_SECOND_CATEGORIES else 0
         return span.end_ms <= parent.end_ms + slack_ms
 
@@ -265,7 +272,7 @@ def nest_lanes(spans: Iterable[tuple[str, Span]]) -> list[list[tuple[int, str, S
         for stack, events in lanes:
             while stack and stack[-1][1].end_ms <= span.start_ms:
                 events.append((stack.pop()[1].end_ms, "end", None))
-        lane = next(((stack, events) for stack, events in lanes if fits(stack, span)), None)
+        lane = next(((stack, events) for stack, events in lanes if fits(stack, category, span)), None)
         if lane is None:
             lane = ([], [])
             lanes.append(lane)
@@ -542,6 +549,7 @@ def summarize(timeline: JobTimeline, top: int = 10) -> dict[str, Any]:
             "test_cases": len(timeline.tests),
         },
         "test_cases_truncated": timeline.truncated,
+        "test_cases_source": timeline.tests_source,
         "slowest_steps": slowest(timeline.steps, top),
         "slowest_commands": slowest(commands, top),
         "slowest_test_processes": slowest(log.processes, top),

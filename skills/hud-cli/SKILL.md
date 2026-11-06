@@ -97,6 +97,7 @@ Pass datasource UIDs (`grafanacloud-prom`, `ceczcsck1b20wb`) to `-d`, not displa
 hud trace JOB_ID                     # ./hud-job-JOB_ID.pftrace for https://ui.perfetto.dev
 hud trace JOB_ID --no-log --no-links --json -o /tmp/t.pftrace   # ClickHouse only; no log download or GitHub fetches
 hud trace --run RUN_ID --no-links      # all jobs of a workflow run on one clock, longest first; or pass several JOB_IDs
+# Jobs missing from ci.runs (XPU) get test cases from their test-reports artifact via gh; see test_cases_source. Add --align to compare runs from different times.
 hud job JOB_ID --json
 hud log url JOB_ID
 hud log download JOB_ID              # saved under the hud-cli cache dir

@@ -4,9 +4,12 @@ import csv
 import io
 import json
 import socket
+import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from typing import Annotated, Any
+from xml.etree import ElementTree
 
 import typer
 from curl_cffi import requests
@@ -15,6 +18,7 @@ from rich.console import Console
 from rich.table import Table
 
 from hud import __version__
+from hud.artifacts import ArtifactError, fetch_test_reports, report_rows
 from hud.auth import CONFIG_PATH, HudConfig, load_config
 from hud.gcx import (
     GRAFANA_SERVER,
@@ -101,19 +105,33 @@ def job(
     console.print(data)
 
 
-def load_timeline(config: HudConfig, job: dict[str, Any], use_log: bool, links: bool, max_tests: int) -> JobTimeline:
+def artifact_test_rows(job: dict[str, Any]) -> list[dict[str, Any]]:
+    """Test cases from the job's test-reports artifact; empty, with a warning, when unavailable."""
+    try:
+        archive = fetch_test_reports(int(job["run_id"]), int(job["id"]))
+        return report_rows(archive) if archive else []
+    except (ArtifactError, subprocess.TimeoutExpired, zipfile.BadZipFile, ElementTree.ParseError, ValueError) as error:
+        err_console.print(f"[yellow]warning:[/yellow] job {job['id']}: {error}; trace has no artifact test cases for it")
+        return []
+
+
+def load_timeline(config: HudConfig, job: dict[str, Any], use_log: bool, links: bool, artifacts: bool, max_tests: int) -> JobTimeline:
     job_id = int(job["id"])
     steps = step_spans(rows_from_gcx_response(clickhouse_query(config, steps_sql(job_id))))
     test_rows = rows_from_gcx_response(
         clickhouse_query(config, tests_sql(job_id, job["started_ms"], job["completed_ms"], max_tests), {"max_execution_time": 120})
     )
+    tests_source = "ci.runs" if test_rows else None
+    if not test_rows and artifacts and job["runner_name"]:
+        test_rows = artifact_test_rows(job)
+        tests_source = "test-reports artifact" if test_rows else None
     log = LogSpans()
     if use_log and job["runner_name"]:
         try:
             log = parse_log(download_log(job_id, default_log_path(job_id)).read_text(errors="replace"))
         except (LogError, requests.RequestsError) as error:
             err_console.print(f"[yellow]warning:[/yellow] job {job_id}: {error}; trace has no log spans for it")
-    timeline = JobTimeline(job, steps, test_spans(test_rows[:max_tests]), log, len(test_rows) > max_tests)
+    timeline = JobTimeline(job, steps, test_spans(test_rows[:max_tests]), log, len(test_rows) > max_tests, tests_source)
     if links:
         timeline = with_links(timeline, fetch_repo_files(job["head_sha"], source_paths(timeline)).get)
     return timeline
@@ -130,6 +148,7 @@ def trace(
     ] = None,
     use_log: bool = typer.Option(True, "--log/--no-log", help="Add spans parsed from the raw job logs."),
     links: bool = typer.Option(True, "--links/--no-links", help="Add GitHub source and step-log links; fetches test files at each job's commit."),
+    artifacts: bool = typer.Option(True, "--artifacts/--no-artifacts", help="When ci.runs has no test cases for a job, read them from its GitHub test-reports artifact."),
     max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows from ci.runs per job."),
     align: bool = typer.Option(False, "--align", help="Shift jobs to start running at the same instant, to compare runs from different times."),
     output_json: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
@@ -148,7 +167,7 @@ def trace(
             raise GcxError(f"jobs {missing} not found in default.workflow_job")
         jobs = sorted(jobs, key=lambda job: int(job["created_ms"]) - int(job["completed_ms"]))
         skipped = len(jobs) - max_jobs if run_id is not None else 0
-        timelines = [load_timeline(config, job, use_log, links, max_tests) for job in jobs[: max_jobs if run_id is not None else None]]
+        timelines = [load_timeline(config, job, use_log, links, artifacts, max_tests) for job in jobs[: max_jobs if run_id is not None else None]]
     except (GcxError, json.JSONDecodeError, KeyError) as error:
         console.print(f"[red]error:[/red] {error}")
         raise typer.Exit(1) from error

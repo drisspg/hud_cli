@@ -9,7 +9,9 @@ start times rather than recording them.
 
 from __future__ import annotations
 
+import functools
 import io
+import math
 import shutil
 import subprocess
 import zipfile
@@ -38,19 +40,24 @@ def gh_api(path: str, *args: str) -> bytes:
     return result.stdout
 
 
-def fetch_test_reports(run_id: int, job_id: int) -> bytes | None:
-    """The job's test-reports zip, or None when the run has none for it (e.g. the job timed out)."""
-    suffix = f"_{job_id}.zip"
+@functools.lru_cache(maxsize=16)
+def run_artifacts(run_id: int) -> tuple[tuple[str, str, int], ...]:
+    """(id, name, size) of a run's unexpired artifacts; cached because every job of a run shares it."""
     listing = gh_api(
         f"{GITHUB_REPO_API}/actions/runs/{int(run_id)}/artifacts?per_page=100",
         "--paginate",
         "--jq",
         ".artifacts[] | select(.expired | not) | [.id, .name, .size_in_bytes] | @tsv",
     )
-    for line in listing.decode().splitlines():
-        artifact_id, name, size = line.split("\t")
+    return tuple((artifact_id, name, int(size)) for artifact_id, name, size in (line.split("\t") for line in listing.decode().splitlines()))
+
+
+def fetch_test_reports(run_id: int, job_id: int) -> bytes | None:
+    """The job's test-reports zip, or None when the run has none for it (e.g. the job timed out)."""
+    suffix = f"_{job_id}.zip"
+    for artifact_id, name, size in run_artifacts(int(run_id)):
         if name.startswith("test-reports-") and name.endswith(suffix):
-            if int(size) > MAX_ARTIFACT_BYTES:
+            if size > MAX_ARTIFACT_BYTES:
                 raise ArtifactError(f"{name} is {size} bytes, over the {MAX_ARTIFACT_BYTES} cap")
             return gh_api(f"{GITHUB_REPO_API}/actions/artifacts/{artifact_id}/zip")
     return None
@@ -67,10 +74,12 @@ def suite_rows(suite: ElementTree.Element, report: str) -> list[dict[str, Any]]:
     cases = list(suite.iter("testcase"))
     if not cases or not suite.get("timestamp"):
         return []
-    start_ms = round(datetime.fromisoformat(suite.get("timestamp")).replace(tzinfo=timezone.utc).timestamp() * 1000)
+    started = datetime.fromisoformat(suite.get("timestamp"))
+    # Newer pytest writes an offset; older pytest writes naive local time, which is UTC on CI runners.
+    start_ms = round((started if started.tzinfo else started.replace(tzinfo=timezone.utc)).timestamp() * 1000)
     durations = [round(float(case.get("time") or 0) * 1000) for case in cases]
     wall_ms = round(float(suite.get("time") or 0) * 1000)
-    workers = max(1, round(sum(durations) / wall_ms)) if wall_ms and sum(durations) > wall_ms * PARALLEL_RATIO else 1
+    workers = math.ceil(sum(durations) / wall_ms) if wall_ms and sum(durations) > wall_ms * PARALLEL_RATIO else 1
     free_ms = [start_ms] * workers
     rows = []
     for case, duration_ms in zip(cases, durations, strict=True):

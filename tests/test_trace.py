@@ -163,7 +163,7 @@ def test_parse_log_recovers_actions_commands_models_and_silences() -> None:
 
 
 def test_nest_lanes_stacks_contained_spans_and_spills_partial_overlaps() -> None:
-    spans = [("step", Span("step", 0, 100_000)), ("file", Span("a", 0, 100_000)), ("test", Span("x", 10_000, 20_000)), ("test", Span("y", 19_500, 20_800)), ("test", Span("z", 30_000, 40_000))]
+    spans = [("step", Span("step", 0, 100_000)), ("file", Span("a", 0, 100_000)), ("test", Span("x", 10_000, 20_000, {"file": "a"})), ("test", Span("y", 19_500, 20_800, {"file": "a"})), ("test", Span("z", 30_000, 40_000, {"file": "a"}))]
 
     lanes = [[(ms, span.name if span else "end") for ms, _, span in events] for events in nest_lanes(spans)]
 
@@ -326,7 +326,7 @@ def test_trace_fails_when_a_requested_job_is_missing(monkeypatch, tmp_path) -> N
 
 
 def test_nest_lanes_never_nests_a_span_under_one_of_the_same_or_finer_category() -> None:
-    spans = [("file", Span("test_a.py", 0, 100_000)), ("test", Span("A.test_x", 0, 90_000)), ("file", Span("test_b.py", 10_000, 20_000))]
+    spans = [("file", Span("test_a.py", 0, 100_000)), ("test", Span("A.test_x", 0, 90_000, {"file": "test_a.py"})), ("file", Span("test_b.py", 10_000, 20_000))]
 
     lanes = [[span.name for _, _, span in events if span] for events in nest_lanes(spans)]
 
@@ -348,3 +348,18 @@ def test_trace_falls_back_to_the_test_reports_artifact_when_ci_runs_is_empty(mon
     summary = json.loads(result.output)["jobs"][0]
     assert archives == [(70, 7)]
     assert (summary["test_cases_source"], summary["counts"]["test_cases"]) == ("test-reports artifact", 3)
+
+
+def test_nest_lanes_puts_files_and_cases_under_their_own_concurrent_process() -> None:
+    spans = [
+        ("process", Span("inductor/test_a 1/1", 0, 100_000)),
+        ("process", Span("test_b 1/1", 1_000, 50_000)),
+        ("file", Span("test/inductor/test_a.py", 2_000, 90_000)),
+        ("file", Span("test/test_b.py", 3_000, 40_000)),
+        ("test", Span("B.test_y", 4_000, 5_000, {"file": "test/test_b.py"})),
+        ("test", Span("A.test_x", 6_000, 7_000, {"file": "test/inductor/test_a.py"})),
+    ]
+
+    lanes = [[span.name for _, _, span in events if span] for events in nest_lanes(spans)]
+
+    assert lanes == [["inductor/test_a 1/1", "test/inductor/test_a.py", "A.test_x"], ["test_b 1/1", "test/test_b.py", "B.test_y"]]

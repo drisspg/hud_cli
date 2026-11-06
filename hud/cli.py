@@ -149,7 +149,7 @@ def trace(
     use_log: bool = typer.Option(True, "--log/--no-log", help="Add spans parsed from the raw job logs."),
     links: bool = typer.Option(True, "--links/--no-links", help="Add GitHub source and step-log links; fetches test files at each job's commit."),
     artifacts: bool = typer.Option(True, "--artifacts/--no-artifacts", help="When ci.runs has no test cases for a job, read them from its GitHub test-reports artifact."),
-    max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows from ci.runs per job."),
+    max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows per job (ci.runs or artifact)."),
     align: bool = typer.Option(False, "--align", help="Shift jobs to start running at the same instant, to compare runs from different times."),
     output_json: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
 ) -> None:

@@ -40,3 +40,9 @@ def test_xdist_suite_cases_are_packed_onto_parallel_workers() -> None:
         ("test_1", "passed", 0, 2_000),
         ("test_2", "failed", 0, 2_000),
     ]
+
+
+def test_offset_aware_suite_timestamps_keep_their_timezone() -> None:
+    rows = report_rows(archive(fp8=SERIAL.replace("2026-11-06T18:00:00.000000", "2026-11-06T10:00:00.000000-08:00")))
+
+    assert rows[0]["start_ms"] == T0

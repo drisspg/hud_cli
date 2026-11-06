@@ -24,7 +24,7 @@ MIN_SILENCE_MS = 30_000
 WHOLE_SECOND_CATEGORIES = frozenset({"job", "step"})
 WHOLE_SECOND_SLACK_MS = 1000
 # Nesting depth order of `timeline` categories: a span only nests under a strictly coarser category.
-CATEGORY_RANKS = {"job": 0, "step": 1, "action": 2, "command": 3, "model": 4, "process": 4, "file": 5, "test": 6}
+CATEGORY_RANKS = {"job": 0, "step": 1, "action": 2, "command": 3, "model": 4, "process": 4, "file": 5, "test": 6, "gap": 0, "silence": 0}
 MAX_NAME = 120
 MAX_ARG = 2000
 LOG_TIMESTAMP = re.compile(r"^\ufeff?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?Z ?")
@@ -247,11 +247,21 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
     return spans
 
 
+def process_test_file(process: str) -> str:
+    """run_test.py process name (`inductor/test_fp8 1/1`, `test_ops, not TestFoo 1/2`) -> `inductor/test_fp8`."""
+    return process.split(",")[0].split()[0]
+
+
+def repo_test_file(file: str) -> str:
+    """Report file path (`test/inductor/test_fp8.py`) -> `inductor/test_fp8`."""
+    return file.removeprefix("test/").removesuffix(".py")
+
+
 def nest_lanes(spans: Iterable[tuple[str, Span]]) -> list[list[tuple[int, str, Span | None]]]:
     """Pack (category, span) pairs onto lanes that Perfetto can draw as properly nested slice stacks.
 
     A span joins the first lane whose innermost open span contains it and has a coarser category (see
-    `CATEGORY_RANKS`), or that has nothing open, so steps, actions, commands, test processes, files,
+    `CATEGORY_RANKS`) and, for files and test cases, the same test file; or that has nothing open, so steps, actions, commands, test processes, files,
     and cases stack under one another and concurrent work spills onto further lanes. Spans with equal bounds nest in input order, so pass parents
     first. A span overrunning a whole-second job or step parent by at most 1s nests with its end
     clipped to the parent's; any other partial overlap spills onto another lane. Returns each lane's ("begin", category, span) / ("end", category, None) events in order,
@@ -263,7 +273,12 @@ def nest_lanes(spans: Iterable[tuple[str, Span]]) -> list[list[tuple[int, str, S
         if not stack:
             return True
         parent_category, parent = stack[-1]
-        if CATEGORY_RANKS.get(parent_category, 0) >= CATEGORY_RANKS.get(category, 0):
+        if CATEGORY_RANKS[parent_category] >= CATEGORY_RANKS[category]:
+            return False
+        # Concurrent test processes and files overlap, so containment alone can pick the wrong owner.
+        if category == "file" and parent_category == "process" and process_test_file(parent.name) != repo_test_file(span.name):
+            return False
+        if category == "test" and parent_category == "file" and span.args["file"] != parent.name:
             return False
         slack_ms = WHOLE_SECOND_SLACK_MS if parent_category in WHOLE_SECOND_CATEGORIES else 0
         return span.end_ms <= parent.end_ms + slack_ms
@@ -627,7 +642,7 @@ def with_links(timeline: JobTimeline, fetch: SourceFetcher) -> JobTimeline:
         return f"{timeline.job['html_url']}#step:{step.args['number']}:1" if step else None
 
     def process_source(name: str) -> str | None:
-        file = name.split(",")[0].split()[0]
+        file = process_test_file(name)
         return None if file.startswith("cpp/") else blob_url(sha, f"test/{file}.py")
 
     def script(command: str) -> str | None:

@@ -201,19 +201,21 @@ Pass datasource UIDs (`grafanacloud-prom`, `ceczcsck1b20wb`) to `-d`; gcx 1.x do
 ## Job timelines in Perfetto
 
 ```bash
-hud trace 123456789                       # writes ./hud-job-123456789.trace.json
-hud trace 123456789 --no-log --json -o /tmp/job.trace.json
+hud trace 123456789                       # writes ./hud-job-123456789.pftrace
+hud trace 123456789 --no-log --json -o /tmp/job.pftrace
 ```
 
-Open the file at https://ui.perfetto.dev. Tracks, coarse to fine:
+The output is a Perfetto protobuf trace (`.pftrace`); open it at https://ui.perfetto.dev. The `timeline` tracks nest every span inside the span that contains it, so each slice stack reads coarse to fine (the slice category names the level):
 
-- `job` (queued, running) and `steps` (GitHub steps, second resolution) from `default.workflow_job`.
-- From the raw log (100 ns timestamps per line): `actions (log)` (`##[group]Run ...` composite-action sections), `shell commands (log)` (`set -x` lines lasting at least 0.5s), `log silent outside tests >=30s` (log gaps outside test processes, test cases, and benchmark models, with the enclosing command in `during`; run_test.py buffers test output, so the log is always quiet while tests run), `test processes (log) N` (run_test.py `Running`/`Finished`, including import/collection), and `benchmark models (log) N` (dynamo benchmark `cuda train <model>` runs from the loading bar onward, with the `pass`/`1.23x`/`eager_fail_to_run` result and enclosing command).
-- From `ci.runs` (millisecond resolution): `test files` (one span per file report), `idle in main step` (Test/Build time with no test case running), and `test cases`.
+- `job` (queued, running) and `step` (GitHub steps, second resolution) from `default.workflow_job`.
+- From the raw log (100 ns timestamps per line, kept at millisecond resolution): `action` (`##[group]Run ...` composite-action sections), `command` (every `set -x` line, including `++` subshell commands, with `xtrace_depth`), `model` (dynamo benchmark `cuda train <model>` runs from the loading bar onward, with the `pass`/`1.23x`/`eager_fail_to_run` result and enclosing command), and `process` (run_test.py `Running`/`Finished`, including import/collection).
+- From `ci.runs` (millisecond resolution): `file` (one span per file report) and `test` (test cases).
+
+Separate tracks mark `idle in main step` (Test/Build time with no test case running) and `log silent outside tests >=30s` (log gaps outside test processes, test cases, and benchmark models, with the enclosing command in `during`; run_test.py buffers test output, so the log is always quiet while tests run).
 
 Clicked slices carry links that Perfetto renders as clickable: `source` (the test's `def` line, test file, script, or torchbench model at the job's commit) and `github_log` (the GitHub step log). Test-file contents come from raw.githubusercontent.com; pass `--no-links` to skip fetching.
 
-Concurrent spans go on numbered tracks. Benchmark and XPU jobs do not upload to `ci.runs`, so their finest level is the log.
+Concurrent or partially overlapping spans spill onto numbered `timeline N` tracks; a span overrunning its parent by under 1s (GitHub step times are whole seconds) is clipped to the parent instead. Benchmark and XPU jobs do not upload to `ci.runs`, so their finest level is the log.
 
 ## Raw CI logs
 
@@ -237,7 +239,7 @@ hud log sections /tmp/job.log --start 'Traceback' --end '^$' --json
 - `hud gcx tables`, `hud gcx describe`, `hud gcx columns`, and `hud gcx sample` discover available ClickHouse data.
 - `hud gcx chq` runs ClickHouse SQL through Grafana's PyTorch ClickHouse datasource.
 - `hud gcx run -- ...` shells out to `gcx` without printing credentials.
-- `hud trace` writes a Perfetto/Chrome trace of one job's queue, steps, test processes, test files, and test cases.
+- `hud trace` writes a nested Perfetto `.pftrace` of one job's queue, steps, log commands, test processes, test files, and test cases.
 - `hud job` prints direct raw S3 job log URLs.
 - `hud log ...` prints direct raw S3 log URLs, downloads logs, searches logs, extracts common patterns/test summaries, and filters bounded sections.
 - `hud auth doctor` / `hud doctor` explain how the CLI is authenticating.

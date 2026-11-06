@@ -1,4 +1,5 @@
 import json
+import struct
 
 from typer.testing import CliRunner
 
@@ -8,10 +9,10 @@ from hud.trace import (
     JobTimeline,
     LogSpans,
     Span,
-    assign_lanes,
     find_test_defs,
     find_test_line,
     idle_silences,
+    nest_lanes,
     parse_log,
     uncovered,
     with_links,
@@ -41,6 +42,63 @@ TESTS = [
     {"file": "test/a.py", "suite": "A", "case_name": "test_y", "report": "r1", "rerun": 0, "outcome": "failed", "start_ms": 35_000, "end_ms": 50_000},
     {"file": "test/b.py", "suite": "B", "case_name": "test_z", "report": "r2", "rerun": 0, "outcome": "passed", "start_ms": 60_000, "end_ms": 70_000},
 ]
+
+
+def protobuf_fields(data: bytes):
+    """(field number, value) pairs of one protobuf message; length-delimited values stay bytes."""
+    index = 0
+
+    def varint() -> int:
+        nonlocal index
+        value = shift = 0
+        while True:
+            byte = data[index]
+            index += 1
+            value |= (byte & 0x7F) << shift
+            shift += 7
+            if byte < 0x80:
+                return value
+
+    while index < len(data):
+        key = varint()
+        wire = key & 7
+        if wire == 0:
+            value = varint()
+        elif wire == 1:
+            value = struct.unpack("<d", data[index:index + 8])[0]
+            index += 8
+        else:
+            size = varint()
+            value = data[index:index + size]
+            index += size
+        yield key >> 3, value
+
+
+def read_slices(trace: bytes) -> list[dict]:
+    """Pair TrackEvent begin/end packets into slices with their track name and stack depth."""
+    tracks, stacks, slices = {}, {}, []
+    for _, packet in protobuf_fields(trace):
+        packet = dict(protobuf_fields(packet))
+        if 60 in packet:
+            descriptor = dict(protobuf_fields(packet[60]))
+            tracks[descriptor[1]] = descriptor[2].decode()
+            continue
+        event = list(protobuf_fields(packet[11]))
+        fields = dict(event)
+        stack = stacks.setdefault(fields[11], [])
+        if fields[9] == 1:
+            args = {}
+            for number, value in event:
+                if number == 4:
+                    annotation = dict(protobuf_fields(value))
+                    name = annotation.pop(10).decode()
+                    args[name] = next(v.decode() if isinstance(v, bytes) else v for v in annotation.values())
+            stack.append({"track": tracks[fields[11]], "name": fields[23].decode(), "cat": fields[22].decode(), "depth": len(stack), "start_ms": packet[8] // 1_000_000, "args": args})
+        else:
+            item = stack.pop()
+            slices.append(item | {"dur_ms": packet[8] // 1_000_000 - item["start_ms"]})
+    assert not any(stacks.values())
+    return slices
 
 
 def fake_query(config, sql, settings=None):
@@ -91,9 +149,10 @@ def test_parse_log_recovers_actions_commands_models_and_silences() -> None:
     spans = parse_log(log)
 
     assert [(s.name, s.duration_ms) for s in spans.actions] == [("Run .ci/pytorch/test.sh", 66_000), ("Run upload", 0)]
-    assert [(s.name, s.duration_ms) for s in spans.commands] == [
-        ("pip install torch.whl", 10_000),
-        ("python benchmarks/dynamo/torchbench.py --training", 54_900),
+    assert [(s.name, s.duration_ms, s.args["xtrace_depth"]) for s in spans.commands] == [
+        ("pip install torch.whl", 10_000, 1),
+        ("echo quick", 100, 2),
+        ("python benchmarks/dynamo/torchbench.py --training", 54_900, 1),
     ]
     assert [(s.name, s.duration_ms, s.args) for s in spans.models] == [
         ("cuda train alexnet", 46_000, {"command": "python benchmarks/dynamo/torchbench.py --training", "result": "pass"}),
@@ -102,10 +161,23 @@ def test_parse_log_recovers_actions_commands_models_and_silences() -> None:
     assert [(s.start_ms % 3_600_000, s.duration_ms) for s in spans.silences] == [(20_000, 38_000)]
 
 
-def test_assign_lanes_separates_overlapping_spans_and_reuses_free_lanes() -> None:
-    lanes = {span.name: lane for lane, span in assign_lanes([Span("a", 0, 10), Span("b", 5, 15), Span("c", 10, 20)])}
+def test_nest_lanes_stacks_contained_spans_and_spills_partial_overlaps() -> None:
+    spans = [("step", Span("step", 0, 100_000)), ("file", Span("a", 0, 100_000)), ("test", Span("x", 10_000, 20_000)), ("test", Span("y", 15_000, 30_000)), ("test", Span("z", 30_000, 40_000))]
 
-    assert lanes == {"a": 0, "b": 1, "c": 0}
+    lanes = [[(ms, span.name if span else "end") for ms, _, span in events] for events in nest_lanes(spans)]
+
+    assert lanes == [
+        [(0, "step"), (0, "a"), (10_000, "x"), (20_000, "end"), (30_000, "z"), (40_000, "end"), (100_000, "end"), (100_000, "end")],
+        [(15_000, "y"), (30_000, "end")],
+    ]
+
+
+def test_nest_lanes_clips_children_that_overrun_a_whole_second_step_end() -> None:
+    spans = [("step", Span("Test", 0, 5_000)), ("action", Span("Run test.sh", 100, 5_400)), ("action", Span("Run upload", 100, 7_000))]
+
+    lanes = [[(ms, span.name if span else "end") for ms, _, span in events] for events in nest_lanes(spans)]
+
+    assert lanes == [[(0, "Test"), (100, "Run test.sh"), (5_000, "end"), (5_000, "end")], [(100, "Run upload"), (7_000, "end")]]
 
 
 def test_uncovered_reports_gaps_between_overlapping_spans() -> None:
@@ -117,7 +189,7 @@ def test_uncovered_reports_gaps_between_overlapping_spans() -> None:
 def test_trace_writes_perfetto_events_and_summary(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(cli, "clickhouse_query", fake_query)
     monkeypatch.setattr(cli, "fetch_repo_files", lambda sha, paths: {"test/a.py": "class A:\n    def test_y(self):\n        pass\n"})
-    output = tmp_path / "job.trace.json"
+    output = tmp_path / "job.pftrace"
 
     result = runner.invoke(app, ["trace", "7", "--no-log", "-o", str(output), "--json"])
 
@@ -128,16 +200,16 @@ def test_trace_writes_perfetto_events_and_summary(monkeypatch, tmp_path) -> None
     assert summary["main_step_idle_sec"] == 40
     assert summary["slowest_files"][0] | {"report": None} == {"name": "test/a.py", "sec": 20.0, "cases": 2, "report": None, "test_case_sec": 25.0, "passed": 1, "failed": 1, "source": "https://github.com/pytorch/pytorch/blob/abc/test/a.py"}
     assert summary["main_step_idle_sec"] is not None
-    trace = json.loads(output.read_text())
-    tracks = {event["tid"]: event["args"]["name"] for event in trace["traceEvents"] if event.get("name") == "thread_name"}
-    slices = [(tracks[event["tid"]], event["name"], event["ts"], event["dur"]) for event in trace["traceEvents"] if event["ph"] == "X"]
-    assert ("job", "queued", 0, 10_000_000) in slices
-    assert ("steps", "Test", 20_000_000, 70_000_000) in slices
-    assert ("test files 0", "test/a.py", 30_000_000, 20_000_000) in slices
-    assert ("test cases 1", "A.test_y", 35_000_000, 15_000_000) in slices
-    assert [s[2:] for s in slices if s[0] == "idle in main step"] == [(20_000_000, 10_000_000), (50_000_000, 10_000_000), (70_000_000, 20_000_000)]
-
-    assert next(e for e in trace["traceEvents"] if e.get("name") == "A.test_y")["args"]["source"] == "https://github.com/pytorch/pytorch/blob/abc/test/a.py#L2"
+    slices = read_slices(output.read_bytes())
+    stacks = {(s["track"], s["depth"], s["cat"], s["name"], s["start_ms"], s["dur_ms"]) for s in slices}
+    assert ("timeline 0", 0, "job", "queued", 0, 10_000) in stacks
+    assert ("timeline 0", 1, "step", "Test", 20_000, 70_000) in stacks
+    assert ("timeline 0", 2, "file", "test/a.py", 30_000, 20_000) in stacks
+    assert ("timeline 0", 3, "test", "A.test_x", 30_000, 10_000) in stacks
+    assert ("timeline 1", 0, "test", "A.test_y", 35_000, 15_000) in stacks
+    assert [(s["start_ms"], s["dur_ms"]) for s in slices if s["track"] == "idle in main step"] == [(20_000, 10_000), (50_000, 10_000), (70_000, 20_000)]
+    assert next(s for s in slices if s["name"] == "A.test_y")["args"]["source"] == "https://github.com/pytorch/pytorch/blob/abc/test/a.py#L2"
+    assert next(s for s in slices if s["name"] == "running")["args"]["truncated_tests"] == 0
 
 
 def test_test_line_matches_instantiated_names_to_their_def() -> None:

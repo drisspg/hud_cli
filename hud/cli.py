@@ -105,14 +105,14 @@ def trace(
     job_id: int = typer.Argument(..., help="GitHub Actions job id."),
     output: Annotated[
         Path | None,
-        typer.Option("--output", "-o", help="Trace path. Defaults to ./hud-job-JOB_ID.trace.json."),
+        typer.Option("--output", "-o", help="Trace path. Defaults to ./hud-job-JOB_ID.pftrace."),
     ] = None,
     use_log: bool = typer.Option(True, "--log/--no-log", help="Add spans parsed from the raw job log."),
     links: bool = typer.Option(True, "--links/--no-links", help="Add GitHub source and step-log links; fetches test files at the job's commit."),
     max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows from ci.runs."),
     output_json: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
 ) -> None:
-    """Write a Perfetto/Chrome trace of where one job spent its time: queue, steps, test files, test cases."""
+    """Write a Perfetto .pftrace of where one job spent its time, nested from steps down to test cases."""
     config = load_config()
     try:
         jobs = rows_from_gcx_response(clickhouse_query(config, job_sql(job_id)))
@@ -136,8 +136,8 @@ def trace(
     if links:
         sources = fetch_repo_files(job["head_sha"], source_paths(timeline))
         timeline = with_links(timeline, sources.get)
-    path = output or Path(f"hud-job-{job_id}.trace.json")
-    path.write_text(json.dumps(build_trace(timeline), default=str))
+    path = output or Path(f"hud-job-{job_id}.pftrace")
+    path.write_bytes(build_trace(timeline))
     summary = summarize(timeline) | {"trace": str(path.resolve()), "open_with": "https://ui.perfetto.dev"}
     if output_json:
         print_json(summary)

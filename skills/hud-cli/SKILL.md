@@ -94,8 +94,8 @@ Pass datasource UIDs (`grafanacloud-prom`, `ceczcsck1b20wb`) to `-d`, not displa
 ## Jobs and logs
 
 ```bash
-hud trace JOB_ID                     # ./hud-job-JOB_ID.trace.json for https://ui.perfetto.dev
-hud trace JOB_ID --no-log --no-links --json -o /tmp/t.json   # ClickHouse only; no log download or GitHub fetches
+hud trace JOB_ID                     # ./hud-job-JOB_ID.pftrace for https://ui.perfetto.dev
+hud trace JOB_ID --no-log --no-links --json -o /tmp/t.pftrace   # ClickHouse only; no log download or GitHub fetches
 hud job JOB_ID --json
 hud log url JOB_ID
 hud log download JOB_ID              # saved under the hud-cli cache dir

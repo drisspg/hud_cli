@@ -1,4 +1,4 @@
-"""Build Perfetto-compatible (Chrome JSON) timelines of where one CI job spends its time.
+"""Build Perfetto (.pftrace protobuf) timelines of where one CI job spends its time.
 
 Sources, all already collected by HUD:
 - `default.workflow_job`: queue time (created_at -> started_at) and GitHub step spans.
@@ -11,14 +11,17 @@ Sources, all already collected by HUD:
 from __future__ import annotations
 
 import re
+import struct
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
 MIN_GAP_MS = 1000
-MIN_COMMAND_MS = 500
+MIN_COMMAND_MS = 0
 MIN_SILENCE_MS = 30_000
+# GitHub step times are truncated to whole seconds, so log spans can overrun their step by up to 1s.
+NEST_SLACK_MS = 1000
 MAX_NAME = 120
 MAX_ARG = 2000
 LOG_TIMESTAMP = re.compile(r"^\ufeff?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?Z ?")
@@ -156,7 +159,8 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
     """Recover sub-step spans from a raw GitHub Actions log in one pass.
 
     - actions: `##[group]Run X` headers, each running until the next one (composite-action granularity).
-    - commands: `set -x` lines (`+ cmd`), each running until the next xtrace or runner line.
+    - commands: `set -x` lines at every nesting level (`+ cmd`, `++ subcmd`), each running until the
+      next xtrace or runner line, at least `min_command_ms` long.
     - processes: run_test.py `Running X i/n` / `Finished X i/n` pairs, including import and collection.
     - models: dynamo benchmark `cuda train <model>` headers, until the next model or command.
     - silences: gaps of at least `min_silence_ms` between consecutive log lines (see `idle_silences`).
@@ -164,7 +168,7 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
     """
     spans = LogSpans()
     open_action: tuple[str, int] | None = None
-    open_command: tuple[str, int] | None = None
+    open_command: tuple[str, int, int] | None = None
     open_model: tuple[str, int, dict[str, Any]] | None = None
     open_processes: dict[str, int] = {}
     loading_ms: int | None = None
@@ -173,8 +177,8 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
     def close_command(end_ms: int) -> None:
         nonlocal open_command
         if open_command and end_ms - open_command[1] >= min_command_ms:
-            command, start_ms = open_command
-            spans.commands.append(Span(command[:MAX_NAME], start_ms, end_ms, {"command": command[:MAX_ARG]}))
+            command, start_ms, depth = open_command
+            spans.commands.append(Span(command[:MAX_NAME], start_ms, end_ms, {"command": command[:MAX_ARG], "xtrace_depth": depth}))
         open_command = None
 
     def close_model(end_ms: int) -> None:
@@ -206,8 +210,7 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
             close_command(timestamp)
             close_model(timestamp)
             loading_ms = None
-            if xtrace[1] == "+":
-                open_command = (xtrace[2], timestamp)
+            open_command = (xtrace[2], timestamp, len(xtrace[1]))
         elif model := LOG_MODEL.match(content):
             # The benchmark prints the model header after loading it; start at the loading bar.
             start_ms = loading_ms if loading_ms is not None else timestamp
@@ -235,18 +238,33 @@ def parse_log(text: str, min_command_ms: int = MIN_COMMAND_MS, min_silence_ms: i
     return spans
 
 
-def assign_lanes(spans: Iterable[Span]) -> list[tuple[int, Span]]:
-    """Greedy interval partitioning so concurrent spans never share a Perfetto track."""
-    lane_ends: list[int] = []
-    placed = []
-    for span in sorted(spans, key=lambda item: (item.start_ms, -item.end_ms)):
-        lane = next((index for index, end in enumerate(lane_ends) if end <= span.start_ms), len(lane_ends))
-        if lane == len(lane_ends):
-            lane_ends.append(span.end_ms)
-        else:
-            lane_ends[lane] = span.end_ms
-        placed.append((lane, span))
-    return placed
+def nest_lanes(
+    spans: Iterable[tuple[str, Span]], slack_ms: int = NEST_SLACK_MS
+) -> list[list[tuple[int, str, Span | None]]]:
+    """Pack (category, span) pairs onto lanes that Perfetto can draw as properly nested slice stacks.
+
+    A span joins the first lane whose innermost open span contains it (or that has nothing open), so
+    steps, actions, commands, test processes, files, and cases stack under one another and concurrent
+    work spills onto further lanes. Spans with equal bounds nest in input order, so pass parents
+    first. A span overrunning its parent by at most `slack_ms` nests with its end clipped to the parent's. Returns each lane's ("begin", category, span) / ("end", category, None) events in order,
+    keyed by millisecond timestamp.
+    """
+    lanes: list[tuple[list[Span], list[tuple[int, str, Span | None]]]] = []
+    for category, span in sorted(spans, key=lambda item: (item[1].start_ms, -item[1].end_ms)):
+        for stack, events in lanes:
+            while stack and stack[-1].end_ms <= span.start_ms:
+                events.append((stack.pop().end_ms, "end", None))
+        lane = next(((stack, events) for stack, events in lanes if not stack or span.end_ms <= stack[-1].end_ms + slack_ms), None)
+        if lane is None:
+            lane = ([], [])
+            lanes.append(lane)
+        if lane[0] and span.end_ms > lane[0][-1].end_ms:
+            span = replace(span, end_ms=lane[0][-1].end_ms)
+        lane[0].append(span)
+        lane[1].append((span.start_ms, category, span))
+    for stack, events in lanes:
+        events.extend((stack.pop().end_ms, "end", None) for _ in range(len(stack)))
+    return [events for _, events in lanes]
 
 
 def uncovered(
@@ -312,54 +330,124 @@ def main_step(timeline: JobTimeline) -> Span | None:
     return next((step for step in timeline.steps if step.name in ("Test", "Build")), None)
 
 
-def build_trace(timeline: JobTimeline) -> dict[str, Any]:
-    job = timeline.job
-    pid = 1
-    events: list[dict[str, Any]] = [
-        {"ph": "M", "pid": pid, "name": "process_name", "args": {"name": job["name"]}},
-    ]
-    thread_ids: dict[str, int] = {}
+def _varint(value: int) -> bytes:
+    value &= (1 << 64) - 1
+    out = bytearray()
+    while value > 0x7F:
+        out.append(value & 0x7F | 0x80)
+        value >>= 7
+    out.append(value)
+    return bytes(out)
 
-    def add(track: str, span: Span, category: str) -> None:
-        if track not in thread_ids:
-            tid = len(thread_ids) + 1
-            thread_ids[track] = tid
-            events.append({"ph": "M", "pid": pid, "tid": tid, "name": "thread_name", "args": {"name": track}})
-            events.append({"ph": "M", "pid": pid, "tid": tid, "name": "thread_sort_index", "args": {"sort_index": tid}})
-        events.append(
-            {"ph": "X", "pid": pid, "tid": thread_ids[track], "name": span.name, "cat": category,
-             "ts": span.start_ms * 1000, "dur": span.duration_ms * 1000, "args": span.args}
+
+def _uint(field_number: int, value: int) -> bytes:
+    return _varint(field_number << 3) + _varint(value)
+
+
+def _bytes(field_number: int, value: bytes | str) -> bytes:
+    data = value.encode() if isinstance(value, str) else value
+    return _varint(field_number << 3 | 2) + _varint(len(data)) + data
+
+
+def _debug_annotation(name: str, value: Any) -> bytes:
+    """perfetto.protos.DebugAnnotation: name = 10, bool = 2, int = 4, double = 5, string = 6."""
+    if isinstance(value, bool):
+        encoded = _uint(2, value)
+    elif isinstance(value, int):
+        encoded = _uint(4, value)
+    elif isinstance(value, float):
+        encoded = _varint(5 << 3 | 1) + struct.pack("<d", value)
+    else:
+        encoded = _bytes(6, str(value))
+    return _bytes(10, name) + encoded
+
+
+SEQUENCE_ID = 1
+SLICE_BEGIN, SLICE_END = 1, 2
+CHILD_ORDERING_EXPLICIT = 3
+SEQ_INCREMENTAL_STATE_CLEARED = 1
+
+
+class PerfettoTrace:
+    """Minimal perfetto.protos.Trace writer: named track hierarchy plus TrackEvent begin/end slices."""
+
+    def __init__(self) -> None:
+        self.packets: list[bytes] = []
+        self.next_uuid = 1
+
+    def _packet(self, body: bytes) -> None:
+        flags = b"" if self.packets else _uint(13, SEQ_INCREMENTAL_STATE_CLEARED)
+        self.packets.append(_bytes(1, body + _uint(10, SEQUENCE_ID) + flags))
+
+    def track(self, name: str, parent: int | None = None, description: str | None = None) -> int:
+        """Add a TrackDescriptor; children are shown in creation order."""
+        uuid = self.next_uuid
+        self.next_uuid += 1
+        descriptor = (
+            _uint(1, uuid)
+            + _bytes(2, name)
+            + (_uint(5, parent) if parent else b"")
+            + _uint(11, CHILD_ORDERING_EXPLICIT)
+            + _uint(12, uuid)
+            + (_bytes(14, description) if description else b"")
         )
+        self._packet(_bytes(60, descriptor))
+        return uuid
 
-    def add_lanes(track: str, spans: Iterable[Span], category: str) -> None:
-        for lane, span in assign_lanes(spans):
-            add(f"{track} {lane}", span, category)
+    def lane_events(self, track: int, events: Iterable[tuple[int, str, Span | None]]) -> None:
+        for ms, category, span in events:
+            event = _uint(11, track)
+            if span is None:
+                event += _uint(9, SLICE_END)
+            else:
+                event += _uint(9, SLICE_BEGIN) + _bytes(23, span.name) + _bytes(22, category)
+                event += b"".join(_bytes(4, _debug_annotation(key, value)) for key, value in span.args.items() if value is not None)
+            self._packet(_uint(8, ms * 1_000_000) + _bytes(11, event))
 
+    def lanes(self, name: str, spans: Iterable[tuple[str, Span]], parent: int, description: str | None = None) -> None:
+        """One track per lane of `nest_lanes(spans)`, grouped under a `name` track when there are several."""
+        lanes = nest_lanes(spans)
+        group = self.track(name, parent, description) if len(lanes) > 1 else parent
+        for index, events in enumerate(lanes):
+            self.lane_events(self.track(f"{name} {index}" if len(lanes) > 1 else name, group, description), events)
+
+    def serialize(self) -> bytes:
+        return b"".join(self.packets)
+
+
+def build_trace(timeline: JobTimeline) -> bytes:
+    """Serialize `timeline` as a .pftrace for https://ui.perfetto.dev.
+
+    The `timeline` lanes stack every span by containment, coarse to fine: job, GitHub steps, log
+    actions, shell commands, benchmark models and test processes, test files, and test cases.
+    """
+    job = timeline.job
     created, started, completed = (int(job[key]) for key in ("created_ms", "started_ms", "completed_ms"))
-    if started > created:
-        add("job", Span("queued", created, started), "job")
-    add("job", Span("running", started, max(completed, started), {"runner": job["runner_name"], "conclusion": job["conclusion"]}), "job")
-    for step in timeline.steps:
-        add("steps", step, "step")
+    metadata = {key: job[key] for key in ("id", "workflow_name", "html_url", "head_sha", "head_branch")}
+    running = {"runner": job["runner_name"], "conclusion": job["conclusion"], "truncated_tests": timeline.truncated} | metadata
     log = timeline.log
-    for action in log.actions:
-        add("actions (log)", action, "action")
-    for command in log.commands:
-        add("shell commands (log)", command, "command")
-    for silence in idle_silences(timeline):
-        add("log silent outside tests >=30s", silence, "silence")
-    add_lanes("test processes (log)", log.processes, "process")
-    add_lanes("benchmark models (log)", log.models, "model")
-    add_lanes("test files", file_spans(timeline.tests), "file")
-    for gap in idle_gaps(timeline):
-        add("idle in main step", gap, "gap")
-    add_lanes("test cases", timeline.tests, "test")
-    return {
-        "traceEvents": events,
-        "displayTimeUnit": "ms",
-        "metadata": {key: job[key] for key in ("id", "name", "workflow_name", "html_url", "head_sha", "head_branch")}
-        | {"truncated_tests": timeline.truncated},
-    }
+    stacked: list[tuple[str, Span]] = [
+        *([("job", Span("queued", created, started))] if started > created else []),
+        ("job", Span("running", started, max(completed, started), running)),
+        *(("step", step) for step in timeline.steps),
+        *(("action", action) for action in log.actions),
+        *(("command", command) for command in log.commands),
+        *(("model", model) for model in log.models),
+        *(("process", process) for process in log.processes),
+        *(("file", file) for file in file_spans(timeline.tests)),
+        *(("test", test) for test in timeline.tests),
+    ]
+    trace = PerfettoTrace()
+    root = trace.track(job["name"], description=job["html_url"])
+    trace.lanes("timeline", stacked, root, "job > step > action > command > model/process > test file > test case")
+    trace.lanes("idle in main step", (("gap", gap) for gap in idle_gaps(timeline)), root, "Test/Build time with no test case running")
+    trace.lanes(
+        "log silent outside tests >=30s",
+        (("silence", silence) for silence in idle_silences(timeline)),
+        root,
+        "Log gaps outside test processes, test cases, and benchmark models",
+    )
+    return trace.serialize()
 
 
 def idle_gaps(timeline: JobTimeline) -> list[Span]:

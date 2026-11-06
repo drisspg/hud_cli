@@ -9,6 +9,7 @@ from hud.trace import (
     JobTimeline,
     LogSpans,
     Span,
+    aligned,
     find_test_defs,
     find_test_line,
     idle_silences,
@@ -302,3 +303,13 @@ def test_trace_puts_several_jobs_on_one_clock_longest_first(monkeypatch, tmp_pat
     slices = read_slices(output.read_bytes())
     assert ("queued (never picked up)", 0, 600_000) in {(s["name"], s["start_ms"], s["dur_ms"]) for s in slices}
     assert ("Test", 20_000, 70_000) in {(s["name"], s["start_ms"], s["dur_ms"]) for s in slices}
+
+
+def test_aligned_jobs_start_running_together_and_keep_their_queues() -> None:
+    early = JobTimeline(JOB, [Span("Test", 20_000, 90_000)], [], LogSpans(processes=[Span("test_fp8 1/1", 30_000, 40_000)]))
+    late = JobTimeline(JOB | {"created_ms": 1_000_000, "started_ms": 1_030_000, "completed_ms": 1_100_000}, [], [], LogSpans())
+
+    first, second = aligned([early, late])
+
+    assert [(t.job["created_ms"], t.job["started_ms"]) for t in (first, second)] == [(20_000, 30_000), (0, 30_000)]
+    assert (first.steps[0].start_ms, first.log.processes[0].start_ms) == (40_000, 50_000)

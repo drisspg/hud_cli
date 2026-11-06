@@ -205,6 +205,7 @@ hud trace 123456789                       # writes ./hud-job-123456789.pftrace
 hud trace 123456789 --no-log --json -o /tmp/job.pftrace
 hud trace 123456789 123456790 --no-links  # several jobs on one clock: ./hud-jobs-123456789-2.pftrace
 hud trace --run 42182634514 --no-links    # every job of a workflow run (longest --max-jobs 30): ./hud-run-42182634514.pftrace
+hud trace 127785071136 128053214944 --align  # compare runs from different times: both start running at t=0 + longest queue
 ```
 
 The output is a Perfetto protobuf trace (`.pftrace`); open it at https://ui.perfetto.dev. The `timeline` tracks nest every span inside the span that contains it, so each slice stack reads coarse to fine (the slice category names the level):

@@ -469,6 +469,24 @@ def job_minutes(timeline: JobTimeline) -> int:
     return round((int(timeline.job["completed_ms"]) - int(timeline.job["created_ms"])) / 60_000)
 
 
+def shifted(timeline: JobTimeline, offset_ms: int) -> JobTimeline:
+    """`timeline` with every timestamp moved by `offset_ms`."""
+
+    def move(spans: list[Span]) -> list[Span]:
+        return [replace(span, start_ms=span.start_ms + offset_ms, end_ms=span.end_ms + offset_ms) for span in spans]
+
+    job = timeline.job | {key: int(timeline.job[key]) + offset_ms for key in ("created_ms", "started_ms", "completed_ms")}
+    log = timeline.log
+    log = LogSpans(*(move(spans) for spans in (log.actions, log.commands, log.processes, log.models, log.silences)))
+    return replace(timeline, job=job, steps=move(timeline.steps), tests=move(timeline.tests), log=log)
+
+
+def aligned(timelines: Sequence[JobTimeline]) -> list[JobTimeline]:
+    """Shift jobs so they all start running at the same instant, keeping each queue before it."""
+    queue_ms = max(int(t.job["started_ms"]) - int(t.job["created_ms"]) for t in timelines)
+    return [shifted(t, queue_ms - int(t.job["started_ms"])) for t in timelines]
+
+
 def build_trace(timelines: Sequence[JobTimeline]) -> bytes:
     """Serialize jobs as a .pftrace for https://ui.perfetto.dev, on one shared wall clock.
 

@@ -49,6 +49,7 @@ from hud.tests_api import (
 from hud.trace import (
     JobTimeline,
     LogSpans,
+    aligned,
     build_trace,
     jobs_sql,
     parse_log,
@@ -130,6 +131,7 @@ def trace(
     use_log: bool = typer.Option(True, "--log/--no-log", help="Add spans parsed from the raw job logs."),
     links: bool = typer.Option(True, "--links/--no-links", help="Add GitHub source and step-log links; fetches test files at each job's commit."),
     max_tests: int = typer.Option(50_000, "--max-tests", min=1, max=500_000, help="Cap on test-case rows from ci.runs per job."),
+    align: bool = typer.Option(False, "--align", help="Shift jobs to start running at the same instant, to compare runs from different times."),
     output_json: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
 ) -> None:
     """Write a Perfetto .pftrace of where jobs spent their time, nested from steps down to test cases."""
@@ -156,7 +158,7 @@ def trace(
         path = Path(f"hud-job-{job_ids[0]}.pftrace")
     else:
         path = Path(f"hud-jobs-{job_ids[0]}-{len(job_ids)}.pftrace")
-    path.write_bytes(build_trace(timelines))
+    path.write_bytes(build_trace(aligned(timelines) if align else timelines))
     summaries = [summarize(timeline) for timeline in timelines]
     result = {"trace": str(path.resolve()), "open_with": "https://ui.perfetto.dev", "jobs_skipped": max(skipped, 0), "jobs": summaries}
     if output_json:
